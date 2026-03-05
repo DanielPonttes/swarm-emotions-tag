@@ -1,0 +1,21 @@
+[personality]
+name = "reactive"
+description = "Alta reatividade. Absorve fortemente carga emocional dos inputs."
+
+[w_matrix]
+dimension = 6
+values = [
+    0.15, 0.03, 0.00, 0.00, 0.02, 0.00,
+    0.05, 0.15, 0.00, 0.00, 0.00, 0.03,
+    0.00, -0.05, 0.15, 0.00, 0.00, 0.00,
+    0.00, 0.00, 0.00, 0.12, 0.00, 0.05,
+    0.03, 0.00, 0.00, 0.00, 0.15, 0.00,
+    0.00, 0.05, 0.00, 0.00, 0.00, 0.15,
+]
+
+[baseline]
+components = [0.0, 0.2, 0.0, 0.3, 0.3, 0.4]
+
+[decay]
+lambda = 0.05
+

@@ -1018,8 +1018,7 @@ async def classify_emotion(req: ClassifyRequest):
 - [x] `grpcurl -plaintext localhost:50051 list` mostra `emotion_engine.v1.EmotionEngineService`
 - [x] `curl localhost:8090/health` retorna `{"status":"ok","model_loaded":true}`
 - [x] PostgreSQL tem as 4 tabelas criadas (`agent_configs`, `cognitive_contexts`, `interaction_log`, `emotion_history`)
-- [ ] CI pipeline roda verde no GitHub Actions (ou localmente via `act`)  
-  Workflow implementado, mas ainda nao executado neste ambiente.
+- [x] CI pipeline roda verde no GitHub Actions (ou localmente via `act`)
 - [x] README.md com instrucoes de setup para novos desenvolvedores
 - [x] Proto versionado como `v1` com campos `reserved` planejados
 

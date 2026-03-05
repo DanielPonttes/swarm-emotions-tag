@@ -1,0 +1,21 @@
+[personality]
+name = "resilient"
+description = "Baixa reatividade. Estimulos externos causam pouco efeito."
+
+[w_matrix]
+dimension = 6
+values = [
+    0.05, 0.00, 0.00, 0.00, 0.00, 0.00,
+    0.00, 0.05, 0.00, 0.00, 0.00, 0.00,
+    0.00, 0.00, 0.05, 0.00, 0.00, 0.00,
+    0.00, 0.00, 0.00, 0.05, 0.00, 0.00,
+    0.00, 0.00, 0.00, 0.00, 0.05, 0.00,
+    0.00, 0.00, 0.00, 0.00, 0.00, 0.05,
+]
+
+[baseline]
+components = [0.1, -0.1, 0.4, 0.6, 0.2, 0.0]
+
+[decay]
+lambda = 0.2
+

@@ -1,8 +1,8 @@
 # Swarm Emotions
 
-Fundacao inicial do monorepo multi-servico descrito em `docs/fases/FASE_0_FUNDACAO.md`.
-Nesta fase, os servicos existem como stubs operacionais com contratos versionados,
-infra local via Docker e automacao basica de build, teste e CI.
+Monorepo multi-servico do EmotionRAG. A fundacao da Fase 0 esta concluida e o
+`emotion-engine` em Rust ja entrou na Fase 1 com FSM, calculo vetorial, score
+fusion, promocao de memoria e servidor gRPC funcionais.
 
 ## Estrutura
 
@@ -45,14 +45,17 @@ Para subir tudo:
 make docker-up
 ```
 
-## Endpoints de stubs
+## Endpoints
 
 - Orchestrator: `GET /health`, `POST /api/v1/interact`
 - Python ML: `GET /health`, `POST /classify-emotion`
 - Emotion Engine: gRPC `emotion_engine.v1.EmotionEngineService`
+  (`TransitionState`, `ComputeEmotionVector`, `FuseScores`, `EvaluatePromotion`,
+  `ProcessInteraction`)
 
 ## Observacoes
 
 - Os contratos Protobuf estao versionados em `v1` e ja reservam faixas de campos para evolucao.
 - O codigo Go gerado a partir dos protos e versionado em `orchestrator/pkg/proto`.
-- A logica real dos servicos sera implementada a partir das proximas fases.
+- O `emotion-engine` Rust ja possui implementacao real e cobertura via `cargo test`,
+  `cargo clippy` e `cargo bench`.

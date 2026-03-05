@@ -1172,43 +1172,45 @@ lambda = 0.05   # Decaimento lento (emocoes persistem)
 
 ## 1.11 Checklist de Aceitacao
 
+> **Status atualizado em 2026-03-05 neste ambiente**
+
 ### FSM
-- [ ] 8 estados emocionais implementados como enum
-- [ ] Tabela de transicoes carregada de TOML (nao hardcoded)
-- [ ] Validacao de grafo: sem sinks, sem estados inalcancaveis
-- [ ] Restricoes Omega funcionais (proibicoes + tempo minimo)
-- [ ] Config padrao cobre todas as combinacoes estado x estimulo relevantes
+- [x] 8 estados emocionais implementados como enum
+- [x] Tabela de transicoes carregada de TOML (nao hardcoded)
+- [x] Validacao de grafo: sem sinks, sem estados inalcancaveis
+- [x] Restricoes Omega funcionais (proibicoes + tempo minimo)
+- [x] Config padrao cobre todas as combinacoes estado x estimulo relevantes
 
 ### Motor Vetorial
-- [ ] EmotionVector 6D com operacoes: intensidade, cosine similarity, clamp
-- [ ] Calculo e(t+1) = e(t) + W*g(t) + epsilon correto (golden tests)
-- [ ] Decaimento exponencial converge para baseline
-- [ ] SusceptibilityMatrix com validacao de estabilidade
-- [ ] 3 presets de personalidade (resilient, reactive, empathic)
-- [ ] Teste de 10.000 iteracoes sem divergencia PASSA
+- [x] EmotionVector 6D com operacoes: intensidade, cosine similarity, clamp
+- [x] Calculo e(t+1) = e(t) + W*g(t) + epsilon correto (golden tests)
+- [x] Decaimento exponencial converge para baseline
+- [x] SusceptibilityMatrix com validacao de estabilidade
+- [x] 3 presets de personalidade (resilient, reactive, empathic)
+- [x] Teste de 10.000 iteracoes sem divergencia PASSA
 
 ### Score Fusion
-- [ ] Fusao alpha*sem + beta*emo + gamma*cog correta
-- [ ] Boost para memorias pseudopermanentes
-- [ ] Ranking ordenado por score decrescente
-- [ ] Validacao de pesos (soma = 1)
+- [x] Fusao alpha*sem + beta*emo + gamma*cog correta
+- [x] Boost para memorias pseudopermanentes
+- [x] Ranking ordenado por score decrescente
+- [x] Validacao de pesos (soma = 1)
 
 ### Motor de Promocao
-- [ ] Criterio simples (intensidade > theta) funciona
-- [ ] Criterio multifatorial (freq + valence) funciona
-- [ ] Nivel maximo = 3 (cap)
+- [x] Criterio simples (intensidade > theta) funciona
+- [x] Criterio multifatorial (freq + valence) funciona
+- [x] Nivel maximo = 3 (cap)
 
 ### gRPC
-- [ ] Todos os 5 endpoints implementados e respondendo
-- [ ] ProcessInteraction (batch) executa pipeline completo
-- [ ] Erros retornam gRPC status codes adequados
-- [ ] `grpcurl` funciona para todos os endpoints
+- [x] Todos os 5 endpoints implementados e respondendo
+- [x] ProcessInteraction (batch) executa pipeline completo
+- [x] Erros retornam gRPC status codes adequados
+- [x] `grpcurl` funciona para todos os endpoints
 
 ### Performance
-- [ ] FSM transition < 1us (criterion bench)
-- [ ] Vector compute 6D < 10us
-- [ ] Score fusion 100 candidatos < 100us
-- [ ] Cosine similarity batch 100x6D < 50us
+- [x] FSM transition < 1us (criterion bench: ~71.8 ns)
+- [x] Vector compute 6D < 10us (criterion bench: ~88.7 ns)
+- [x] Score fusion 100 candidatos < 100us (criterion bench: ~6.21 us)
+- [x] Cosine similarity batch 100x6D < 50us (criterion bench: ~1.44 us)
 
 ---
 

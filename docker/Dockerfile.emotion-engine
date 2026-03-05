@@ -7,7 +7,10 @@ WORKDIR /app/emotion-engine
 RUN cargo build --release
 
 FROM debian:bookworm-slim
+WORKDIR /app
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/emotion-engine/target/release/emotion-engine /usr/local/bin/emotion-engine
+COPY emotion-engine/config/ /app/config/
+ENV FSM_CONFIG_PATH=/app/config/default_fsm.toml
 EXPOSE 50051
 CMD ["emotion-engine"]

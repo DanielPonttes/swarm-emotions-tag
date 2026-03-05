@@ -1,0 +1,146 @@
+[metadata]
+name = "default"
+version = "0.1.0"
+description = "FSM padrao com 8 estados emocionais"
+
+[[rules]]
+from = "neutral"
+stimulus = "praise"
+to = "joyful"
+
+[[rules]]
+from = "neutral"
+stimulus = "mild_criticism"
+to = "empathetic"
+
+[[rules]]
+from = "neutral"
+stimulus = "severe_criticism"
+to = "worried"
+
+[[rules]]
+from = "neutral"
+stimulus = "novelty"
+to = "curious"
+
+[[rules]]
+from = "neutral"
+stimulus = "urgency"
+to = "anxious"
+
+[[rules]]
+from = "joyful"
+stimulus = "success"
+to = "joyful"
+
+[[rules]]
+from = "joyful"
+stimulus = "failure"
+to = "worried"
+
+[[rules]]
+from = "joyful"
+stimulus = "boredom"
+to = "neutral"
+
+[[rules]]
+from = "curious"
+stimulus = "success"
+to = "joyful"
+
+[[rules]]
+from = "curious"
+stimulus = "failure"
+to = "frustrated"
+
+[[rules]]
+from = "curious"
+stimulus = "resolution"
+to = "calm"
+
+[[rules]]
+from = "empathetic"
+stimulus = "resolution"
+to = "calm"
+
+[[rules]]
+from = "empathetic"
+stimulus = "user_frustration"
+to = "anxious"
+
+[[rules]]
+from = "empathetic"
+stimulus = "praise"
+to = "joyful"
+
+[[rules]]
+from = "worried"
+stimulus = "resolution"
+to = "calm"
+
+[[rules]]
+from = "worried"
+stimulus = "failure"
+to = "frustrated"
+
+[[rules]]
+from = "worried"
+stimulus = "empathy"
+to = "empathetic"
+
+[[rules]]
+from = "frustrated"
+stimulus = "resolution"
+to = "calm"
+
+[[rules]]
+from = "frustrated"
+stimulus = "praise"
+to = "empathetic"
+
+[[rules]]
+from = "frustrated"
+stimulus = "failure"
+to = "anxious"
+
+[[rules]]
+from = "anxious"
+stimulus = "resolution"
+to = "calm"
+
+[[rules]]
+from = "anxious"
+stimulus = "empathy"
+to = "empathetic"
+
+[[rules]]
+from = "anxious"
+stimulus = "success"
+to = "worried"
+
+[[rules]]
+from = "calm"
+stimulus = "boredom"
+to = "neutral"
+
+[[rules]]
+from = "calm"
+stimulus = "novelty"
+to = "curious"
+
+[[rules]]
+from = "calm"
+stimulus = "urgency"
+to = "worried"
+
+[constraints]
+forbidden = [
+    { from = "joyful", stimulus = "mild_criticism", to = "frustrated" },
+    { from = "calm", stimulus = "mild_criticism", to = "frustrated" },
+]
+
+[constraints.min_duration_ms]
+joyful = 2000
+anxious = 1000
+frustrated = 1500
+

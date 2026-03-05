@@ -748,31 +748,40 @@ package pipeline_test
 
 ## 2.8 Checklist de Aceitacao
 
+> **Status atualizado em 2026-03-05 neste ambiente**
+
+> **Escopo implementado nesta iteracao:** orquestrador funcional com mocks, API REST completa, pipeline de 8 steps, client gRPC do motor emocional, client HTTP do classificador e testes unitarios/concorrencia.
+
 ### API Gateway
-- [ ] `POST /api/v1/interact` aceita request e retorna response (com mocks)
-- [ ] `POST /api/v1/agents` cria agente no PostgreSQL
-- [ ] `GET /api/v1/agents/{id}/state` retorna estado do Redis
-- [ ] `GET /health` e `GET /ready` funcionam
-- [ ] Request ID propagado em todos os logs
-- [ ] Timeout global de 30s aplicado
+- [x] `POST /api/v1/interact` aceita request e retorna response (com mocks)
+- [ ] `POST /api/v1/agents` cria agente no PostgreSQL  
+  Implementado com mock in-memory do DB; persistencia real em PostgreSQL ainda nao foi conectada.
+- [ ] `GET /api/v1/agents/{id}/state` retorna estado do Redis  
+  Implementado com mock in-memory de cache; persistencia real em Redis ainda nao foi conectada.
+- [x] `GET /health` e `GET /ready` funcionam
+- [x] Request ID propagado em todos os logs
+- [x] Timeout global de 30s aplicado
 
 ### Pipeline
-- [ ] 8 steps executam na sequencia correta
-- [ ] Step 5 (retrieve) executa 3 queries em paralelo via errgroup
-- [ ] Step 8 (pos-processamento) roda em background
-- [ ] Erro em qualquer step retorna mensagem clara
-- [ ] Timeout budget distribui tempo entre steps
+- [x] 8 steps executam na sequencia correta
+- [x] Step 5 (retrieve) executa 3 queries em paralelo via errgroup
+- [x] Step 8 (pos-processamento) roda em background
+- [x] Erro em qualquer step retorna mensagem clara
+- [x] Timeout budget distribui tempo entre steps
 
 ### Connectors
-- [ ] Emotion Engine client: chamada gRPC funcional (com mock server)
-- [ ] VectorStore client: query Qdrant funcional (teste de integracao)
-- [ ] Cache client: Redis get/set/lock funcional
-- [ ] DB client: PostgreSQL CRUD funcional
-- [ ] LLM client: pelo menos 1 provider implementado (OpenAI ou mock)
-- [ ] Classifier client: HTTP call para python-ml funcional
+- [x] Emotion Engine client: chamada gRPC funcional (com mock server)
+- [ ] VectorStore client: query Qdrant funcional (teste de integracao)  
+  Apenas mock do vector store foi implementado nesta etapa.
+- [ ] Cache client: Redis get/set/lock funcional  
+  Apenas mock do cache foi implementado nesta etapa.
+- [ ] DB client: PostgreSQL CRUD funcional  
+  Apenas mock do DB foi implementado nesta etapa.
+- [x] LLM client: pelo menos 1 provider implementado (OpenAI ou mock)
+- [x] Classifier client: HTTP call para python-ml funcional
 
 ### Concorrencia
-- [ ] Lock por agent_id previne lost updates
+- [x] Lock por agent_id previne lost updates
 - [ ] Goroutines nao vazam (pprof mostra contagem estavel)
 - [ ] Circuit breaker testado para Rust engine indisponivel
 

@@ -7,23 +7,31 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-func NewRouter() http.Handler {
+func NewRouter(h *Handlers) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(middleware.Timeout(defaultHTTPTimeout))
 
-	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	})
+	r.Get("/health", h.Health)
+	r.Get("/ready", h.Ready)
 
-	r.Post("/api/v1/interact", func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "not yet implemented", http.StatusNotImplemented)
+	r.Route("/api/v1", func(r chi.Router) {
+		r.Post("/interact", h.Interact)
+		r.Route("/agents", func(r chi.Router) {
+			r.Post("/", h.CreateAgent)
+			r.Get("/", h.ListAgents)
+			r.Route("/{agentID}", func(r chi.Router) {
+				r.Get("/", h.GetAgent)
+				r.Put("/", h.UpdateAgent)
+				r.Delete("/", h.DeleteAgent)
+				r.Get("/state", h.GetAgentState)
+				r.Get("/history", h.GetEmotionHistory)
+			})
+		})
 	})
 
 	return r
 }
-

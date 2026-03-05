@@ -1,35 +1,119 @@
 package api
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
+
+	"github.com/swarm-emotions/orchestrator/internal/connector/cache"
+	"github.com/swarm-emotions/orchestrator/internal/connector/classifier"
+	"github.com/swarm-emotions/orchestrator/internal/connector/db"
+	"github.com/swarm-emotions/orchestrator/internal/connector/emotion"
+	"github.com/swarm-emotions/orchestrator/internal/connector/llm"
+	"github.com/swarm-emotions/orchestrator/internal/connector/vectorstore"
+	"github.com/swarm-emotions/orchestrator/internal/pipeline"
 )
 
-func TestHealthRoute(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
-	rec := httptest.NewRecorder()
+func newTestRouter() http.Handler {
+	cacheClient := cache.NewMockClient()
+	dbClient := db.NewMockClient()
+	orchestrator := pipeline.New(
+		emotion.NewMockClient(),
+		vectorstore.NewMockClient(),
+		cacheClient,
+		dbClient,
+		llm.NewMockProvider(),
+		classifier.NewMockClient(),
+	)
+	orchestrator.SetBackgroundRunner(func(fn func()) { fn() })
+	handlers := NewHandlers(
+		orchestrator,
+		dbClient,
+		cacheClient,
+		cacheClient,
+		dbClient,
+		llm.NewMockProvider(),
+		classifier.NewMockClient(),
+	)
+	return NewRouter(handlers)
+}
 
-	NewRouter().ServeHTTP(rec, req)
+func TestHealthAndReadyRoutes(t *testing.T) {
+	router := newTestRouter()
+
+	for _, path := range []string{"/health", "/ready"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s expected 200, got %d", path, rec.Code)
+		}
+	}
+}
+
+func TestAgentLifecycleAndStateRoutes(t *testing.T) {
+	router := newTestRouter()
+
+	createBody := bytes.NewBufferString(`{"agent_id":"agent-1","display_name":"Agent One"}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/agents/", createBody)
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	router.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create agent expected 201, got %d", createRec.Code)
+	}
+
+	stateReq := httptest.NewRequest(http.MethodGet, "/api/v1/agents/agent-1/state", nil)
+	stateRec := httptest.NewRecorder()
+	router.ServeHTTP(stateRec, stateReq)
+	if stateRec.Code != http.StatusOK {
+		t.Fatalf("get state expected 200, got %d", stateRec.Code)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/agents/", nil)
+	listRec := httptest.NewRecorder()
+	router.ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list agents expected 200, got %d", listRec.Code)
+	}
+}
+
+func TestInteractAndHistoryRoutes(t *testing.T) {
+	router := newTestRouter()
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/agents/", bytes.NewBufferString(`{"agent_id":"agent-42"}`))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	router.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create agent expected 201, got %d", createRec.Code)
+	}
+
+	body := bytes.NewBufferString(`{"agent_id":"agent-42","text":"thanks for the great help"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/interact", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+		t.Fatalf("interact expected 200, got %d", rec.Code)
 	}
 
-	if body := strings.TrimSpace(rec.Body.String()); body != `{"status":"ok"}` {
-		t.Fatalf("unexpected body: %s", body)
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode interact response: %v", err)
+	}
+	if payload["trace_id"] == "" {
+		t.Fatalf("expected trace_id in interact response")
+	}
+
+	historyReq := httptest.NewRequest(http.MethodGet, "/api/v1/agents/agent-42/history", nil)
+	historyRec := httptest.NewRecorder()
+	router.ServeHTTP(historyRec, historyReq)
+	if historyRec.Code != http.StatusOK {
+		t.Fatalf("history expected 200, got %d", historyRec.Code)
 	}
 }
-
-func TestInteractStubRoute(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/interact", nil)
-	rec := httptest.NewRecorder()
-
-	NewRouter().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNotImplemented {
-		t.Fatalf("expected status %d, got %d", http.StatusNotImplemented, rec.Code)
-	}
-}
-

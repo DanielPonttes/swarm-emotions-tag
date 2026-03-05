@@ -1,0 +1,40 @@
+package classifier
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
+
+func TestClientClassifyEmotion(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/health":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"ok","model_loaded":true}`))
+		case "/classify-emotion":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"emotion_vector":[0.1,0.2,0.3,0.4,0.5,0.6],"label":"joyful","confidence":0.95}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL)
+	if err := client.Ready(context.Background()); err != nil {
+		t.Fatalf("ready: %v", err)
+	}
+
+	result, err := client.ClassifyEmotion(context.Background(), "thanks for the help")
+	if err != nil {
+		t.Fatalf("classify emotion: %v", err)
+	}
+	if result.Label != "joyful" {
+		t.Fatalf("expected joyful, got %s", result.Label)
+	}
+	if result.Stimulus != "praise" {
+		t.Fatalf("expected stimulus praise, got %s", result.Stimulus)
+	}
+}

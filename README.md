@@ -2,7 +2,8 @@
 
 Monorepo multi-servico do EmotionRAG. A fundacao da Fase 0 esta concluida e o
 `emotion-engine` em Rust ja entrou na Fase 1 com FSM, calculo vetorial, score
-fusion, promocao de memoria e servidor gRPC funcionais.
+fusion, promocao de memoria e servidor gRPC funcionais. O `orchestrator` em Go
+ja entrou na Fase 2 com API REST, pipeline de 8 steps e connectors mockados.
 
 ## Estrutura
 
@@ -47,7 +48,9 @@ make docker-up
 
 ## Endpoints
 
-- Orchestrator: `GET /health`, `POST /api/v1/interact`
+- Orchestrator: `GET /health`, `GET /ready`, `POST /api/v1/interact`,
+  `POST|GET /api/v1/agents/`, `GET|PUT|DELETE /api/v1/agents/{agentID}/`,
+  `GET /api/v1/agents/{agentID}/state`, `GET /api/v1/agents/{agentID}/history`
 - Python ML: `GET /health`, `POST /classify-emotion`
 - Emotion Engine: gRPC `emotion_engine.v1.EmotionEngineService`
   (`TransitionState`, `ComputeEmotionVector`, `FuseScores`, `EvaluatePromotion`,
@@ -59,3 +62,5 @@ make docker-up
 - O codigo Go gerado a partir dos protos e versionado em `orchestrator/pkg/proto`.
 - O `emotion-engine` Rust ja possui implementacao real e cobertura via `cargo test`,
   `cargo clippy` e `cargo bench`.
+- O `orchestrator` Go ja possui API funcional com mocks, cobertura via `go test`
+  e `golangci-lint`, e esta pronto para a integracao real da Fase 3.

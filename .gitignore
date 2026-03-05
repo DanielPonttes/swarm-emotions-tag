@@ -8,6 +8,7 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+*.egg-info/
 .venv/
 venv/
 .env
@@ -15,4 +16,3 @@ venv/
 .env.*.local
 node_modules/
 .DS_Store
-

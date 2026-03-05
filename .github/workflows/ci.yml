@@ -44,7 +44,7 @@ jobs:
       - name: Generate proto
         run: PATH="$(go env GOPATH)/bin:$PATH" make proto-gen-go
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v6
         with:
           version: v1.64.8
           working-directory: orchestrator
@@ -54,11 +54,10 @@ jobs:
   proto:
     name: Proto
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: proto
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: bufbuild/buf-setup-action@v1
-      - run: buf lint
-      - run: buf breaking --against '../.git#branch=main'
+      - run: buf lint proto
+      - run: buf breaking proto --against '.git#branch=main,subdir=proto'

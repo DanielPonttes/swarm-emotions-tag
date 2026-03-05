@@ -1,0 +1,164 @@
+syntax = "proto3";
+
+package emotion_engine.v1;
+
+option go_package = "github.com/swarm-emotions/orchestrator/pkg/proto/emotion_engine/v1;emotion_enginev1";
+
+service EmotionEngineService {
+  rpc TransitionState(TransitionStateRequest) returns (TransitionStateResponse);
+  rpc ComputeEmotionVector(ComputeEmotionVectorRequest) returns (ComputeEmotionVectorResponse);
+  rpc FuseScores(FuseScoresRequest) returns (FuseScoresResponse);
+  rpc EvaluatePromotion(EvaluatePromotionRequest) returns (EvaluatePromotionResponse);
+  rpc ProcessInteraction(ProcessInteractionRequest) returns (ProcessInteractionResponse);
+}
+
+message EmotionVector {
+  reserved 100 to 199;
+  repeated float components = 1;
+}
+
+message FsmState {
+  reserved 100 to 199;
+  string state_name = 1;
+  string macro_state = 2;
+  int64 entered_at_ms = 3;
+}
+
+message SusceptibilityMatrix {
+  reserved 100 to 199;
+  repeated float values = 1;
+  uint32 dimension = 2;
+}
+
+message TransitionStateRequest {
+  reserved 100 to 199;
+  FsmState current_state = 1;
+  string stimulus = 2;
+  EmotionVector stimulus_vector = 3;
+  string agent_id = 4;
+}
+
+message TransitionStateResponse {
+  reserved 100 to 199;
+  FsmState new_state = 1;
+  bool transition_occurred = 2;
+  string blocked_reason = 3;
+}
+
+message ComputeEmotionVectorRequest {
+  reserved 100 to 199;
+  EmotionVector current_emotion = 1;
+  EmotionVector trigger = 2;
+  SusceptibilityMatrix w_matrix = 3;
+  EmotionVector baseline = 4;
+  float decay_lambda = 5;
+  float delta_time = 6;
+  bool enable_noise = 7;
+  float noise_sigma = 8;
+}
+
+message ComputeEmotionVectorResponse {
+  reserved 100 to 199;
+  EmotionVector new_emotion = 1;
+  float intensity = 2;
+}
+
+message ScoreCandidate {
+  reserved 100 to 199;
+  string memory_id = 1;
+  float semantic_score = 2;
+  float emotional_score = 3;
+  float cognitive_score = 4;
+  uint32 memory_level = 5;
+  bool is_pseudopermanent = 6;
+}
+
+message FuseScoresRequest {
+  reserved 100 to 199;
+  repeated ScoreCandidate candidates = 1;
+  float alpha = 2;
+  float beta = 3;
+  float gamma = 4;
+  float pseudoperm_boost = 5;
+  EmotionVector current_emotion = 6;
+}
+
+message RankedMemory {
+  reserved 100 to 199;
+  string memory_id = 1;
+  float final_score = 2;
+  float semantic_contribution = 3;
+  float emotional_contribution = 4;
+  float cognitive_contribution = 5;
+}
+
+message FuseScoresResponse {
+  reserved 100 to 199;
+  repeated RankedMemory ranked = 1;
+}
+
+message MemoryForPromotion {
+  reserved 100 to 199;
+  string memory_id = 1;
+  EmotionVector emotion_at_creation = 2;
+  float intensity = 3;
+  uint32 current_level = 4;
+  uint32 access_frequency = 5;
+  float valence_magnitude = 6;
+}
+
+message EvaluatePromotionRequest {
+  reserved 100 to 199;
+  repeated MemoryForPromotion memories = 1;
+  float intensity_threshold = 2;
+  uint32 frequency_threshold = 3;
+  float valence_threshold = 4;
+}
+
+message PromotionDecision {
+  reserved 100 to 199;
+  string memory_id = 1;
+  bool should_promote = 2;
+  uint32 target_level = 3;
+  string reason = 4;
+}
+
+message EvaluatePromotionResponse {
+  reserved 100 to 199;
+  repeated PromotionDecision decisions = 1;
+}
+
+message ProcessInteractionRequest {
+  reserved 100 to 199;
+  string agent_id = 1;
+  FsmState current_fsm_state = 2;
+  EmotionVector current_emotion = 3;
+  string stimulus = 4;
+  EmotionVector stimulus_vector = 5;
+  SusceptibilityMatrix w_matrix = 6;
+  EmotionVector baseline = 7;
+  float decay_lambda = 8;
+  float delta_time = 9;
+  bool enable_noise = 10;
+  float noise_sigma = 11;
+  repeated ScoreCandidate score_candidates = 12;
+  float alpha = 13;
+  float beta = 14;
+  float gamma = 15;
+  float pseudoperm_boost = 16;
+  repeated MemoryForPromotion promotion_candidates = 17;
+  float intensity_threshold = 18;
+  uint32 frequency_threshold = 19;
+  float valence_threshold = 20;
+}
+
+message ProcessInteractionResponse {
+  reserved 100 to 199;
+  FsmState new_fsm_state = 1;
+  bool transition_occurred = 2;
+  EmotionVector new_emotion = 3;
+  float new_intensity = 4;
+  repeated RankedMemory ranked_memories = 5;
+  repeated PromotionDecision promotion_decisions = 6;
+}
+

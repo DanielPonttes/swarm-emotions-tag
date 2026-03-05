@@ -1,0 +1,25 @@
+services:
+  emotion-engine:
+    build:
+      target: builder
+    working_dir: /app/emotion-engine
+    command: cargo run
+    environment:
+      RUST_LOG: debug
+    volumes:
+      - ./emotion-engine:/app/emotion-engine
+      - ./proto:/app/proto
+
+  orchestrator:
+    build:
+      target: builder
+    working_dir: /app/orchestrator
+    command: sh -c "go mod download && go run ./cmd/server"
+    volumes:
+      - ./orchestrator:/app/orchestrator
+      - ./proto:/app/proto
+
+  python-ml:
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8090 --reload
+    volumes:
+      - ./python-ml/app:/app/app

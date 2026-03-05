@@ -1,0 +1,14 @@
+.git
+.env
+.env.local
+.venv
+bin
+docs
+emotion-engine/target
+orchestrator/.cache
+orchestrator/.golangci.yml.tmp
+python-ml/.pytest_cache
+python-ml/__pycache__
+**/__pycache__
+**/*.pyc
+

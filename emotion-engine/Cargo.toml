@@ -1,0 +1,30 @@
+[package]
+name = "emotion-engine"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tonic = "0.12"
+tonic-reflection = "0.12"
+prost = "0.13"
+prost-types = "0.13"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+ndarray = "0.16"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+rand = "0.8"
+rand_distr = "0.4"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-opentelemetry = "0.27"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[build-dependencies]
+tonic-build = "0.12"
+
+[[bench]]
+name = "hot_path"
+harness = false

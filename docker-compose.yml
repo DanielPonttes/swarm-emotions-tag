@@ -1,0 +1,77 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.12.1
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: 6334
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  postgresql:
+    image: postgres:17-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: emotionrag
+      POSTGRES_USER: emotionrag
+      POSTGRES_PASSWORD: dev_password_change_me
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+  emotion-engine:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.emotion-engine
+    ports:
+      - "50051:50051"
+    environment:
+      GRPC_PORT: 50051
+      RUST_LOG: info,emotion_engine=debug
+    depends_on:
+      - redis
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.orchestrator
+    ports:
+      - "8080:8080"
+    environment:
+      HTTP_PORT: 8080
+      EMOTION_ENGINE_ADDR: emotion-engine:50051
+      QDRANT_ADDR: qdrant:6334
+      REDIS_ADDR: redis:6379
+      POSTGRES_DSN: postgres://emotionrag:dev_password_change_me@postgresql:5432/emotionrag?sslmode=disable
+      PYTHON_ML_URL: http://python-ml:8090
+      LLM_PROVIDER: openai
+      LLM_API_KEY: ${LLM_API_KEY:-}
+    depends_on:
+      - emotion-engine
+      - qdrant
+      - postgresql
+      - redis
+      - python-ml
+
+  python-ml:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.python-ml
+    ports:
+      - "8090:8090"
+    environment:
+      PORT: 8090
+      MODEL_NAME: monologg/bert-base-cased-goemotions-original
+      EMBEDDING_MODEL: all-MiniLM-L6-v2
+
+volumes:
+  qdrant_data:
+  pg_data:

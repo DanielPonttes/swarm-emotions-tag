@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "emotion-ml"
+version = "0.1.0"
+description = "Stub Python ML service for Swarm Emotions."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115,<1.0",
+    "pydantic>=2.10,<3.0",
+    "uvicorn[standard]>=0.32,<1.0",
+]
+
+[project.optional-dependencies]
+ml = [
+    "numpy>=1.26",
+    "onnx>=1.17",
+    "onnxruntime>=1.20",
+    "sentence-transformers>=3.3",
+    "torch>=2.5",
+    "transformers>=4.46",
+]
+

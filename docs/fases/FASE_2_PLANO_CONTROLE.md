@@ -967,3 +967,33 @@ Considerar Fase 2 concluida quando:
 3. Teste de estabilidade (10-30 RPS por 5 min) demonstrar contagem de goroutines estavel.
 4. Pipeline responder `POST /api/v1/interact` usando Redis/PostgreSQL/Qdrant reais.
 5. Logs e metricas permitirem diagnosticar falhas por dependencia sem reproduzir localmente.
+
+---
+
+## 2.12 Fechamento da Etapa 2 (2026-03-08)
+
+### 2.12.1 Decisao de fechamento
+
+Etapa 2 finalizada no escopo de implementacao do plano de controle:
+- API Gateway implementado e testado.
+- Pipeline com 8 steps, paralelismo no retrieve e post-processamento assíncrono.
+- Connector Hub real (Redis/PostgreSQL/Qdrant/Rust/classifier) com resiliencia e observabilidade.
+- Suites unitarias, de falha e de integracao automatizada implementadas.
+
+### 2.12.2 Pendencias de homologacao neste ambiente
+
+Itens de homologacao final permanecem bloqueados por infraestrutura local de execucao:
+- `docker compose up -d redis postgresql qdrant` nao executa por indisponibilidade do Docker daemon (`/var/run/docker.sock` inacessivel).
+- `go test ...` nao executa neste terminal por ausencia do binario `go`.
+
+Como consequencia, os itens abaixo seguem pendentes apenas de execucao em ambiente com runtime habilitado:
+- Suite de integracao real deterministica em ambiente limpo.
+- Teste de estabilidade longa (10-30 RPS por 5 min) com coleta pprof.
+
+### 2.12.3 Gate para entrada na Fase 3
+
+Entrada na Fase 3 permitida apos rodar em ambiente habilitado (Go + Docker daemon):
+1. `go test ./...`
+2. `go test -tags=integration -v ./internal/connector/cache ./internal/connector/db ./internal/connector/vectorstore`
+3. `go test -tags=stability -run TestStability_NoGoroutineLeakUnderLoad -v ./internal/pipeline`
+4. Smoke test de `POST /api/v1/interact` com `USE_MOCK_CONNECTORS=false`

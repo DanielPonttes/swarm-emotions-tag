@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/swarm-emotions/orchestrator/internal/api"
 	"github.com/swarm-emotions/orchestrator/internal/config"
 	"github.com/swarm-emotions/orchestrator/internal/connector"
@@ -16,6 +17,7 @@ import (
 	"github.com/swarm-emotions/orchestrator/internal/connector/emotion"
 	"github.com/swarm-emotions/orchestrator/internal/connector/llm"
 	"github.com/swarm-emotions/orchestrator/internal/connector/vectorstore"
+	"github.com/swarm-emotions/orchestrator/internal/observability"
 	"github.com/swarm-emotions/orchestrator/internal/pipeline"
 )
 
@@ -24,6 +26,7 @@ func main() {
 	slog.SetDefault(logger)
 
 	cfg := config.Load()
+	metricsReporter := observability.NewPrometheusReporter(prometheus.DefaultRegisterer)
 
 	var (
 		cacheClient       connector.CacheClient
@@ -54,6 +57,7 @@ func main() {
 		slog.Info("starting with real connectors")
 
 		cacheReal := cache.NewClient(cfg.RedisAddr)
+		cacheReal.SetMetricsReporter(metricsReporter)
 		cacheClient = cacheReal
 		cleanups = append(cleanups, func() {
 			if err := cacheReal.Close(); err != nil {
@@ -66,6 +70,7 @@ func main() {
 			slog.Error("init postgres client", "error", err)
 			os.Exit(1)
 		}
+		dbReal.SetMetricsReporter(metricsReporter)
 		dbClient = dbReal
 		cleanups = append(cleanups, dbReal.Close)
 
@@ -74,7 +79,11 @@ func main() {
 			slog.Error("init emotion client", "error", err)
 			os.Exit(1)
 		}
-		emotionClient = emotionReal
+		emotionClient = emotion.NewCircuitBreakerClient(
+			emotionReal,
+			emotion.DefaultCircuitBreakerConfig(),
+			metricsReporter,
+		)
 		cleanups = append(cleanups, func() {
 			if err := emotionReal.Close(); err != nil {
 				slog.Warn("close emotion client", "error", err)
@@ -86,10 +95,13 @@ func main() {
 			slog.Error("init qdrant client", "error", err)
 			os.Exit(1)
 		}
+		vectorReal.SetMetricsReporter(metricsReporter)
 		vectorStoreClient = vectorReal
 
 		llmProvider = llm.NewMockProvider()
-		classifierClient = classifier.NewClient(cfg.PythonMLURL)
+		classifierReal := classifier.NewClient(cfg.PythonMLURL)
+		classifierReal.SetMetricsReporter(metricsReporter)
+		classifierClient = classifierReal
 	}
 
 	readyChecks = append(readyChecks, cacheClient, dbClient, llmProvider, classifierClient)
@@ -105,6 +117,7 @@ func main() {
 		llmProvider,
 		classifierClient,
 	)
+	orchestrator.SetMetricsReporter(metricsReporter)
 	handlers := api.NewHandlers(
 		orchestrator,
 		dbClient,

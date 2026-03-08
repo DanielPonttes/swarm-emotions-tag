@@ -11,11 +11,13 @@ import (
 
 	"github.com/swarm-emotions/orchestrator/internal/connector"
 	"github.com/swarm-emotions/orchestrator/internal/model"
+	"github.com/swarm-emotions/orchestrator/internal/observability"
 )
 
 type Client struct {
 	baseURL string
 	http    *http.Client
+	metrics observability.Reporter
 }
 
 type classifyRequest struct {
@@ -34,7 +36,16 @@ func NewClient(baseURL string) *Client {
 		http: &http.Client{
 			Timeout: 2 * time.Second,
 		},
+		metrics: observability.NewNoopReporter(),
 	}
+}
+
+func (c *Client) SetMetricsReporter(reporter observability.Reporter) {
+	if reporter == nil {
+		c.metrics = observability.NewNoopReporter()
+		return
+	}
+	c.metrics = reporter
 }
 
 func (c *Client) Ready(ctx context.Context) error {
@@ -44,10 +55,12 @@ func (c *Client) Ready(ctx context.Context) error {
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
+		c.metrics.IncDependencyError("classifier", "ready")
 		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		c.metrics.IncDependencyError("classifier", "ready")
 		return fmt.Errorf("classifier health returned %d", resp.StatusCode)
 	}
 	return nil
@@ -66,15 +79,18 @@ func (c *Client) ClassifyEmotion(ctx context.Context, text string) (*connector.E
 
 	resp, err := c.http.Do(req)
 	if err != nil {
+		c.metrics.IncDependencyError("classifier", "classify_emotion")
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		c.metrics.IncDependencyError("classifier", "classify_emotion")
 		return nil, fmt.Errorf("classifier returned %d", resp.StatusCode)
 	}
 
 	var decoded classifyResponse
 	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		c.metrics.IncDependencyError("classifier", "classify_emotion")
 		return nil, err
 	}
 	return &connector.EmotionClassification{

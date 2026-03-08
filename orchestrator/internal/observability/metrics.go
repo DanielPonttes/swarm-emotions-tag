@@ -22,8 +22,8 @@ func NewNoopReporter() Reporter {
 }
 
 type PrometheusReporter struct {
-	stepDurationMs    *prometheus.HistogramVec
-	dependencyErrors  *prometheus.CounterVec
+	stepDurationMs   *prometheus.HistogramVec
+	dependencyErrors *prometheus.CounterVec
 }
 
 func NewPrometheusReporter(registerer prometheus.Registerer) *PrometheusReporter {

@@ -16,6 +16,8 @@ import (
 
 	"github.com/swarm-emotions/orchestrator/internal/connector"
 	"github.com/swarm-emotions/orchestrator/internal/model"
+	"github.com/swarm-emotions/orchestrator/internal/observability"
+	"github.com/swarm-emotions/orchestrator/internal/resilience"
 )
 
 const defaultCollection = "memories"
@@ -24,6 +26,8 @@ type Client struct {
 	baseURL    string
 	collection string
 	http       *http.Client
+	metrics    observability.Reporter
+	retry      resilience.RetryPolicy
 }
 
 type searchRequest struct {
@@ -70,7 +74,13 @@ func NewClient(addr, collection string) (*Client, error) {
 		baseURL:    baseURL,
 		collection: collection,
 		http: &http.Client{
-			Timeout: 2 * time.Second,
+			Timeout: 600 * time.Millisecond,
+		},
+		metrics: observability.NewNoopReporter(),
+		retry: resilience.RetryPolicy{
+			Attempts:  3,
+			BaseDelay: 15 * time.Millisecond,
+			MaxDelay:  150 * time.Millisecond,
 		},
 	}
 
@@ -84,20 +94,37 @@ func NewClient(addr, collection string) (*Client, error) {
 }
 
 func (c *Client) Ready(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/collections/"+c.collection, nil)
+	err := resilience.Do(ctx, c.retry, func(attemptCtx context.Context) error {
+		callCtx, cancel := context.WithTimeout(attemptCtx, 300*time.Millisecond)
+		defer cancel()
+		req, err := http.NewRequestWithContext(callCtx, http.MethodGet, c.baseURL+"/collections/"+c.collection, nil)
+		if err != nil {
+			return err
+		}
+		resp, err := c.http.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode >= 400 {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+			return fmt.Errorf("qdrant readiness check failed with %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		}
+		return nil
+	})
 	if err != nil {
+		c.metrics.IncDependencyError("qdrant", "ready")
 		return err
-	}
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf("qdrant readiness check failed with %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	return nil
+}
+
+func (c *Client) SetMetricsReporter(reporter observability.Reporter) {
+	if reporter == nil {
+		c.metrics = observability.NewNoopReporter()
+		return
+	}
+	c.metrics = reporter
 }
 
 func (c *Client) QuerySemantic(ctx context.Context, params connector.QuerySemanticParams) ([]model.MemoryHit, error) {
@@ -134,49 +161,62 @@ func (c *Client) search(ctx context.Context, vector []float32, agentID string, l
 		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/collections/%s/points/search", c.baseURL, c.collection)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	hits, err := resilience.DoValue(ctx, c.retry, func(attemptCtx context.Context) ([]model.MemoryHit, error) {
+		callCtx, cancel := context.WithTimeout(attemptCtx, 350*time.Millisecond)
+		defer cancel()
+		url := fmt.Sprintf("%s/collections/%s/points/search", c.baseURL, c.collection)
+		req, err := http.NewRequestWithContext(callCtx, http.MethodPost, url, bytes.NewReader(payload))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.http.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode >= 400 {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+			return nil, fmt.Errorf("qdrant search failed with %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		}
+
+		var decoded searchResponse
+		if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+			return nil, err
+		}
+
+		result := make([]model.MemoryHit, 0, len(decoded.Result))
+		for _, point := range decoded.Result {
+			hit := model.MemoryHit{
+				MemoryID:          resolveMemoryID(point.ID, point.Payload),
+				Content:           readString(point.Payload["content"]),
+				CognitiveScore:    readFloat32(point.Payload["cognitive_score"]),
+				MemoryLevel:       readUint32(point.Payload["memory_level"]),
+				IsPseudopermanent: readBool(point.Payload["is_pseudopermanent"]),
+			}
+			if hit.MemoryID == "" {
+				continue
+			}
+			if hit.MemoryLevel == 0 {
+				hit.MemoryLevel = 1
+			}
+			if semantic {
+				hit.SemanticScore = float32(point.Score)
+			} else {
+				hit.EmotionalScore = float32(point.Score)
+			}
+			result = append(result, hit)
+		}
+		return result, nil
+	})
 	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return nil, fmt.Errorf("qdrant search failed with %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-
-	var decoded searchResponse
-	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
-		return nil, err
-	}
-
-	hits := make([]model.MemoryHit, 0, len(decoded.Result))
-	for _, point := range decoded.Result {
-		hit := model.MemoryHit{
-			MemoryID:          resolveMemoryID(point.ID, point.Payload),
-			Content:           readString(point.Payload["content"]),
-			CognitiveScore:    readFloat32(point.Payload["cognitive_score"]),
-			MemoryLevel:       readUint32(point.Payload["memory_level"]),
-			IsPseudopermanent: readBool(point.Payload["is_pseudopermanent"]),
-		}
-		if hit.MemoryID == "" {
-			continue
-		}
-		if hit.MemoryLevel == 0 {
-			hit.MemoryLevel = 1
-		}
+		op := "query_emotional"
 		if semantic {
-			hit.SemanticScore = float32(point.Score)
-		} else {
-			hit.EmotionalScore = float32(point.Score)
+			op = "query_semantic"
 		}
-		hits = append(hits, hit)
+		c.metrics.IncDependencyError("qdrant", op)
+		return nil, err
 	}
 	return hits, nil
 }
@@ -193,27 +233,31 @@ func (c *Client) ensureCollection(ctx context.Context) error {
 		return err
 	}
 
-	req, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPut,
-		fmt.Sprintf("%s/collections/%s", c.baseURL, c.collection),
-		bytes.NewReader(body),
-	)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
+	return resilience.Do(ctx, c.retry, func(attemptCtx context.Context) error {
+		callCtx, cancel := context.WithTimeout(attemptCtx, 350*time.Millisecond)
+		defer cancel()
+		req, err := http.NewRequestWithContext(
+			callCtx,
+			http.MethodPut,
+			fmt.Sprintf("%s/collections/%s", c.baseURL, c.collection),
+			bytes.NewReader(body),
+		)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		data, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return fmt.Errorf("ensure qdrant collection failed with %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
-	}
-	return nil
+		resp, err := c.http.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode >= 400 {
+			data, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+			return fmt.Errorf("ensure qdrant collection failed with %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+		}
+		return nil
+	})
 }
 
 func normalizeBaseURL(addr string) (string, error) {

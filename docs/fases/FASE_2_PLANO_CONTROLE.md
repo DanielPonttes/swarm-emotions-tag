@@ -803,8 +803,116 @@ package pipeline_test
 
 Ao final da Fase 2:
 - O orquestrador Go funciona com mocks e testes unitarios passam
-- Todos os connectors estao implementados e testados contra servicos reais
 - O pipeline executa os 8 steps com mocks
+- Restam connectors reais (Redis/PostgreSQL/Qdrant) e hardening operacional para concluir a fase
 
 A **Fase 3** conecta Go ao motor Rust real (substituindo mock) e ao servico Python,
 formando o primeiro pipeline E2E funcional.
+
+---
+
+## 2.11 Continuacao do Plano (a partir de 2026-03-05)
+
+Objetivo desta continuacao: fechar os itens pendentes da Fase 2 antes da entrada na Fase 3.
+
+### 2.11.1 Escopo restante obrigatorio
+
+1. Conectar persistencia real no plano de controle:
+   - Redis: estado emocional, working memory, lock por `agent_id`.
+   - PostgreSQL: CRUD de agente, config e contexto cognitivo.
+   - Qdrant: queries semantica/emocional e upsert de memoria.
+2. Hardening de resiliencia:
+   - Circuit breaker para chamadas ao motor Rust.
+   - Retry com backoff para falhas transientes (Qdrant/Redis/DB).
+   - Fallbacks explicitos para indisponibilidade parcial.
+3. Observabilidade operacional:
+   - pprof habilitado no server Go.
+   - Metricas Prometheus por step do pipeline.
+   - Tracing com `request_id`/`trace_id` propagado.
+4. Testes de integracao reais (sem mocks) em CI local com Docker Compose.
+
+### 2.11.2 Sequencia recomendada de execucao
+
+#### Bloco A - Persistencia real (prioridade maxima)
+
+1. Redis connector (`internal/connector/cache/client.go`)
+   - Implementar `GetAgentState`, `SetAgentState`, `GetWorkingMemory`, `PushWorkingMemory`.
+   - Implementar lock robusto com `SET NX PX` + token de ownership para unlock seguro.
+   - Adicionar testes de corrida com `-race`.
+
+2. PostgreSQL connector (`internal/connector/db/client.go`)
+   - Implementar `GetAgentConfig`, `SaveAgentConfig`, `GetCognitiveContext`, `UpdateCognitiveContext`, `LogInteraction`.
+   - Definir migracoes minimas para tabelas `agents`, `cognitive_context`, `interaction_log`.
+   - Garantir idempotencia de `SaveAgentConfig` (upsert).
+
+3. Qdrant connector (`internal/connector/vectorstore/client.go`)
+   - Implementar `QuerySemantic` e `QueryEmotional` com filtros por `agent_id`.
+   - Implementar `UpsertMemory` e `DeleteMemory`.
+   - Definir politica de `TopK` padrao e limites maximos.
+
+4. Wiring no `cmd/server/main.go`
+   - Substituir mocks por connectors reais via flags/env.
+   - Manter fallback para mocks em ambiente de desenvolvimento.
+
+#### Bloco B - Resiliencia e observabilidade
+
+1. Circuit breaker para Emotion Engine
+   - Abrir circuito apos `N` falhas consecutivas.
+   - Half-open com janela curta de recuperacao.
+   - Retornar erro semantico (`dependency_unavailable`) no handler.
+
+2. Timeout e retry policy por dependencia
+   - Redis: timeout curto (50-100ms), retry baixo.
+   - Qdrant/DB: timeout moderado (100-300ms), retry exponencial com jitter.
+   - LLM: timeout maior com cancelamento por contexto.
+
+3. Instrumentacao
+   - Latencia por step (`step_perceive_ms`, `step_retrieve_ms`, etc).
+   - Contadores de erro por dependencia.
+   - Numero de goroutines e uso de memoria via pprof.
+
+#### Bloco C - Validacao de saida da Fase 2
+
+1. Testes de integracao obrigatorios
+   - Redis real: roundtrip + lock ownership.
+   - PostgreSQL real: CRUD completo.
+   - Qdrant real: upsert/query/delete.
+2. Testes de falha
+   - Rust indisponivel: erro controlado (sem panic).
+   - Redis indisponivel: falha explicita em state update.
+   - Qdrant indisponivel: degrade sem travar pipeline.
+3. Teste de estabilidade
+   - Carga de 10-30 RPS por 5 minutos com LLM mock.
+   - Confirmar contagem estavel de goroutines (sem leak).
+
+### 2.11.3 Cronograma sugerido (3 semanas)
+
+- Semana de 2026-03-09 a 2026-03-13:
+  - Fechar Bloco A (Redis + PostgreSQL + wiring).
+- Semana de 2026-03-16 a 2026-03-20:
+  - Fechar Bloco A (Qdrant) + inicio do Bloco B (timeouts/retry/circuit breaker).
+- Semana de 2026-03-23 a 2026-03-27:
+  - Fechar Bloco B + executar Bloco C (integracao, falhas, estabilidade).
+
+### 2.11.4 Atualizacao do checklist pendente
+
+#### API Gateway
+- [ ] `POST /api/v1/agents` persistindo em PostgreSQL real
+- [ ] `GET /api/v1/agents/{id}/state` lendo de Redis real
+
+#### Connectors
+- [ ] VectorStore client conectado ao Qdrant real
+- [ ] Cache client conectado ao Redis real
+- [ ] DB client conectado ao PostgreSQL real
+
+#### Concorrencia e resiliencia
+- [ ] Sem vazamento de goroutines (pprof estavel em carga)
+- [ ] Circuit breaker validado com Rust indisponivel
+
+### 2.11.5 Criterio de saida para iniciar Fase 3
+
+Considerar Fase 2 concluida quando:
+1. Todos os itens de 2.11.4 estiverem marcados como `[x]`.
+2. Suite de testes unitarios + integracao passar em ambiente limpo.
+3. Pipeline responder `POST /api/v1/interact` usando Redis/PostgreSQL/Qdrant reais.
+4. Logs e metricas permitirem diagnosticar falhas por dependencia sem reproduzir localmente.

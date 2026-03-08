@@ -150,6 +150,11 @@ funcional e otimizacao prematura que complica builds.
 ## FASE 2 - Plano de Controle em Go (Semana 5-9)
 
 > Nota: Inicia em paralelo com Fase 1.3 (servidor gRPC Rust).
+>
+> **Status real em 2026-03-08:** Bloco A concluido, Bloco B concluido, Bloco C parcialmente validado neste ambiente.
+> - Implementado: connectors reais (Redis/PostgreSQL/Qdrant), circuit breaker, retry/backoff, timeout budget, `/metrics` e `/debug/pprof/*`.
+> - Validado: `go test ./...` e testes de falha/estabilidade.
+> - Pendente: execucao deterministica da integracao real em ambiente limpo (infra Docker bloqueada por DNS no pull de imagens).
 
 ### Entregaveis
 
@@ -159,6 +164,7 @@ funcional e otimizacao prematura que complica builds.
 - Endpoint `GET /agent/{id}/state` - estado emocional corrente
 - Endpoint `POST /agent` - criar agente com configuracao (baseline, W, pesos)
 - Health check, readiness probe
+- Exposicao de `/metrics` (Prometheus) e `/debug/pprof/*`
 
 #### 2.2 Orquestrador de Pipeline (Semana 6-8)
 - Implementacao dos 8 steps do pipeline (Secao 8 do doc. arquitetural)
@@ -168,16 +174,31 @@ funcional e otimizacao prematura que complica builds.
 
 #### 2.3 Connector Hub (Semana 7-9)
 - Client gRPC para o motor Rust (`google.golang.org/grpc`)
-- Client Qdrant (`qdrant-go`) - queries semanticas e emocionais em paralelo
+- Client Qdrant HTTP - queries semanticas e emocionais em paralelo
 - Client Redis - leitura/escrita de working memory (L1) e estado corrente
 - Client PostgreSQL - configuracoes de agentes, contexto cognitivo, audit log
 - Client LLM generico (interface com implementacoes para OpenAI, Anthropic, local)
+- Circuit breaker para dependencia Rust + retry/backoff/jitter para Redis/PostgreSQL/Qdrant
+
+#### 2.4 Validacao do Bloco C (2026-03-08)
+- Unitarios/falha:
+  - `go test ./...` -> PASS
+- Integracao real automatizada:
+  - testes com tag `integration` criados para Redis/PostgreSQL/Qdrant
+  - `go test -tags=integration -v ./internal/connector/cache ./internal/connector/db ./internal/connector/vectorstore`
+  - Resultado no ambiente atual: SKIP por `connection refused` (servicos locais indisponiveis)
+- Estabilidade:
+  - `go test -tags=stability -run TestStability_NoGoroutineLeakUnderLoad -v ./internal/pipeline` -> PASS
+- Tentativa de provisionar dependencias reais:
+  - `docker compose up -d redis postgresql qdrant`
+  - Resultado: FAIL por DNS externo no pull de imagens (`docker-images-prod...cloudflarestorage.com`)
 
 ### Criterios de Saida
-- API Gateway responde a requests com stubs (sem motor Rust ainda)
-- Orquestrador executa pipeline completo com mocks
-- Cada connector tem testes de integracao contra servicos reais (via docker-compose)
-- Latencia do pipeline sem LLM: < 100ms com mocks
+- API Gateway responde a requests em modo real e modo mock
+- Orquestrador executa pipeline completo com resiliencia (timeout + retry + circuit breaker)
+- Cada connector possui testes de integracao automatizados contra servicos reais
+- Integracao real executa de forma deterministica em ambiente limpo (pendente neste ambiente por bloqueio de infra)
+- Latencia do pipeline sem LLM: alvo < 100ms com mocks
 
 ### ANALISE DE FALHAS E GARGALOS
 

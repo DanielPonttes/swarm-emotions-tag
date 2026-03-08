@@ -9,10 +9,14 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/swarm-emotions/orchestrator/internal/model"
+	"github.com/swarm-emotions/orchestrator/internal/observability"
+	"github.com/swarm-emotions/orchestrator/internal/resilience"
 )
 
 type Client struct {
-	pool *pgxpool.Pool
+	pool    *pgxpool.Pool
+	metrics observability.Reporter
+	retry   resilience.RetryPolicy
 }
 
 func NewClient(dsn string) (*Client, error) {
@@ -29,7 +33,15 @@ func NewClient(dsn string) (*Client, error) {
 		return nil, fmt.Errorf("connect postgres: %w", err)
 	}
 
-	client := &Client{pool: pool}
+	client := &Client{
+		pool:    pool,
+		metrics: observability.NewNoopReporter(),
+		retry: resilience.RetryPolicy{
+			Attempts:  3,
+			BaseDelay: 10 * time.Millisecond,
+			MaxDelay:  120 * time.Millisecond,
+		},
+	}
 	if err := client.ensureSchema(context.Background()); err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("ensure postgres schema: %w", err)
@@ -44,7 +56,19 @@ func (c *Client) Close() {
 func (c *Client) Ready(ctx context.Context) error {
 	probeCtx, cancel := context.WithTimeout(ctx, 400*time.Millisecond)
 	defer cancel()
-	return c.pool.Ping(probeCtx)
+	err := c.pool.Ping(probeCtx)
+	if err != nil {
+		c.metrics.IncDependencyError("postgres", "ready")
+	}
+	return err
+}
+
+func (c *Client) SetMetricsReporter(reporter observability.Reporter) {
+	if reporter == nil {
+		c.metrics = observability.NewNoopReporter()
+		return
+	}
+	c.metrics = reporter
 }
 
 func (c *Client) GetAgentConfig(ctx context.Context, agentID string) (*model.AgentConfig, error) {
@@ -53,47 +77,56 @@ SELECT agent_id, display_name, baseline, w_matrix, w_dimension, weights, decay_l
 FROM agent_configs
 WHERE agent_id = $1
 `
-	var (
-		cfg          model.AgentConfig
-		baselineJSON []byte
-		wMatrixJSON  []byte
-		weightsJSON  []byte
-	)
-	err := c.pool.QueryRow(ctx, query, agentID).Scan(
-		&cfg.AgentID,
-		&cfg.DisplayName,
-		&baselineJSON,
-		&wMatrixJSON,
-		&cfg.WDimension,
-		&weightsJSON,
-		&cfg.DecayLambda,
-		&cfg.NoiseEnabled,
-		&cfg.NoiseSigma,
-	)
-	if err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, nil
+	cfg, err := resilience.DoValue(ctx, c.retry, func(attemptCtx context.Context) (*model.AgentConfig, error) {
+		callCtx, cancel := context.WithTimeout(attemptCtx, 300*time.Millisecond)
+		defer cancel()
+
+		var (
+			item         model.AgentConfig
+			baselineJSON []byte
+			wMatrixJSON  []byte
+			weightsJSON  []byte
+		)
+		err := c.pool.QueryRow(callCtx, query, agentID).Scan(
+			&item.AgentID,
+			&item.DisplayName,
+			&baselineJSON,
+			&wMatrixJSON,
+			&item.WDimension,
+			&weightsJSON,
+			&item.DecayLambda,
+			&item.NoiseEnabled,
+			&item.NoiseSigma,
+		)
+		if err != nil {
+			if err == pgx.ErrNoRows {
+				return nil, nil
+			}
+			return nil, err
 		}
-		return nil, err
-	}
 
-	baseline, err := decodeEmotionVector(baselineJSON)
+		baseline, err := decodeEmotionVector(baselineJSON)
+		if err != nil {
+			return nil, fmt.Errorf("decode baseline: %w", err)
+		}
+		item.Baseline = baseline
+
+		item.WMatrix, err = decodeFloat32Slice(wMatrixJSON)
+		if err != nil {
+			return nil, fmt.Errorf("decode w_matrix: %w", err)
+		}
+
+		item.Weights, err = decodeScoreWeights(weightsJSON)
+		if err != nil {
+			return nil, fmt.Errorf("decode weights: %w", err)
+		}
+
+		return &item, nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("decode baseline: %w", err)
+		c.metrics.IncDependencyError("postgres", "get_agent_config")
 	}
-	cfg.Baseline = baseline
-
-	cfg.WMatrix, err = decodeFloat32Slice(wMatrixJSON)
-	if err != nil {
-		return nil, fmt.Errorf("decode w_matrix: %w", err)
-	}
-
-	cfg.Weights, err = decodeScoreWeights(weightsJSON)
-	if err != nil {
-		return nil, fmt.Errorf("decode weights: %w", err)
-	}
-
-	return &cfg, nil
+	return cfg, err
 }
 
 func (c *Client) SaveAgentConfig(ctx context.Context, cfg *model.AgentConfig) error {
@@ -145,17 +178,25 @@ ON CONFLICT (agent_id) DO UPDATE SET
 	noise_sigma = EXCLUDED.noise_sigma,
 	updated_at = NOW()
 `
-	_, err = c.pool.Exec(ctx, query,
-		cfg.AgentID,
-		cfg.DisplayName,
-		baselineJSON,
-		wMatrixJSON,
-		cfg.WDimension,
-		weightsJSON,
-		cfg.DecayLambda,
-		cfg.NoiseEnabled,
-		cfg.NoiseSigma,
-	)
+	err = resilience.Do(ctx, c.retry, func(attemptCtx context.Context) error {
+		callCtx, cancel := context.WithTimeout(attemptCtx, 300*time.Millisecond)
+		defer cancel()
+		_, execErr := c.pool.Exec(callCtx, query,
+			cfg.AgentID,
+			cfg.DisplayName,
+			baselineJSON,
+			wMatrixJSON,
+			cfg.WDimension,
+			weightsJSON,
+			cfg.DecayLambda,
+			cfg.NoiseEnabled,
+			cfg.NoiseSigma,
+		)
+		return execErr
+	})
+	if err != nil {
+		c.metrics.IncDependencyError("postgres", "save_agent_config")
+	}
 	return err
 }
 
@@ -165,73 +206,91 @@ SELECT agent_id, display_name, baseline, w_matrix, w_dimension, weights, decay_l
 FROM agent_configs
 ORDER BY agent_id
 `
-	rows, err := c.pool.Query(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
+	items, err := resilience.DoValue(ctx, c.retry, func(attemptCtx context.Context) ([]model.AgentConfig, error) {
+		callCtx, cancel := context.WithTimeout(attemptCtx, 300*time.Millisecond)
+		defer cancel()
 
-	out := make([]model.AgentConfig, 0)
-	for rows.Next() {
-		var (
-			cfg          model.AgentConfig
-			baselineJSON []byte
-			wMatrixJSON  []byte
-			weightsJSON  []byte
-		)
-		if err := rows.Scan(
-			&cfg.AgentID,
-			&cfg.DisplayName,
-			&baselineJSON,
-			&wMatrixJSON,
-			&cfg.WDimension,
-			&weightsJSON,
-			&cfg.DecayLambda,
-			&cfg.NoiseEnabled,
-			&cfg.NoiseSigma,
-		); err != nil {
-			return nil, err
-		}
-		cfg.Baseline, err = decodeEmotionVector(baselineJSON)
+		rows, err := c.pool.Query(callCtx, query)
 		if err != nil {
 			return nil, err
 		}
-		cfg.WMatrix, err = decodeFloat32Slice(wMatrixJSON)
-		if err != nil {
+		defer rows.Close()
+
+		out := make([]model.AgentConfig, 0)
+		for rows.Next() {
+			var (
+				cfg          model.AgentConfig
+				baselineJSON []byte
+				wMatrixJSON  []byte
+				weightsJSON  []byte
+			)
+			if err := rows.Scan(
+				&cfg.AgentID,
+				&cfg.DisplayName,
+				&baselineJSON,
+				&wMatrixJSON,
+				&cfg.WDimension,
+				&weightsJSON,
+				&cfg.DecayLambda,
+				&cfg.NoiseEnabled,
+				&cfg.NoiseSigma,
+			); err != nil {
+				return nil, err
+			}
+			cfg.Baseline, err = decodeEmotionVector(baselineJSON)
+			if err != nil {
+				return nil, err
+			}
+			cfg.WMatrix, err = decodeFloat32Slice(wMatrixJSON)
+			if err != nil {
+				return nil, err
+			}
+			cfg.Weights, err = decodeScoreWeights(weightsJSON)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, cfg)
+		}
+		if err := rows.Err(); err != nil {
 			return nil, err
 		}
-		cfg.Weights, err = decodeScoreWeights(weightsJSON)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, cfg)
+		return out, nil
+	})
+	if err != nil {
+		c.metrics.IncDependencyError("postgres", "list_agent_configs")
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return out, nil
+	return items, err
 }
 
 func (c *Client) DeleteAgentConfig(ctx context.Context, agentID string) error {
-	tx, err := c.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
+	err := resilience.Do(ctx, c.retry, func(attemptCtx context.Context) error {
+		callCtx, cancel := context.WithTimeout(attemptCtx, 300*time.Millisecond)
+		defer cancel()
 
-	if _, err := tx.Exec(ctx, `DELETE FROM interaction_log WHERE agent_id = $1`, agentID); err != nil {
-		return err
+		tx, err := c.pool.Begin(callCtx)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback(callCtx)
+
+		if _, err := tx.Exec(callCtx, `DELETE FROM interaction_log WHERE agent_id = $1`, agentID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(callCtx, `DELETE FROM emotion_history WHERE agent_id = $1`, agentID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(callCtx, `DELETE FROM cognitive_contexts WHERE agent_id = $1`, agentID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(callCtx, `DELETE FROM agent_configs WHERE agent_id = $1`, agentID); err != nil {
+			return err
+		}
+		return tx.Commit(callCtx)
+	})
+	if err != nil {
+		c.metrics.IncDependencyError("postgres", "delete_agent_config")
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM emotion_history WHERE agent_id = $1`, agentID); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(ctx, `DELETE FROM cognitive_contexts WHERE agent_id = $1`, agentID); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(ctx, `DELETE FROM agent_configs WHERE agent_id = $1`, agentID); err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
+	return err
 }
 
 func (c *Client) GetCognitiveContext(ctx context.Context, agentID string) (*model.CognitiveContext, error) {
@@ -240,41 +299,50 @@ SELECT active_goals, norms, beliefs, (EXTRACT(EPOCH FROM updated_at) * 1000)::bi
 FROM cognitive_contexts
 WHERE agent_id = $1
 `
-	var (
-		goalsJSON   []byte
-		normsJSON   []byte
-		beliefsJSON []byte
-		updatedAtMs int64
-	)
-	err := c.pool.QueryRow(ctx, query, agentID).Scan(&goalsJSON, &normsJSON, &beliefsJSON, &updatedAtMs)
-	if err != nil {
-		if err == pgx.ErrNoRows {
-			return &model.CognitiveContext{AgentID: agentID}, nil
+	value, err := resilience.DoValue(ctx, c.retry, func(attemptCtx context.Context) (*model.CognitiveContext, error) {
+		callCtx, cancel := context.WithTimeout(attemptCtx, 300*time.Millisecond)
+		defer cancel()
+
+		var (
+			goalsJSON   []byte
+			normsJSON   []byte
+			beliefsJSON []byte
+			updatedAtMs int64
+		)
+		err := c.pool.QueryRow(callCtx, query, agentID).Scan(&goalsJSON, &normsJSON, &beliefsJSON, &updatedAtMs)
+		if err != nil {
+			if err == pgx.ErrNoRows {
+				return &model.CognitiveContext{AgentID: agentID}, nil
+			}
+			return nil, err
 		}
-		return nil, err
-	}
 
-	var goals []string
-	if err := json.Unmarshal(goalsJSON, &goals); err != nil {
-		return nil, err
-	}
+		var goals []string
+		if err := json.Unmarshal(goalsJSON, &goals); err != nil {
+			return nil, err
+		}
 
-	var norms map[string]any
-	if err := json.Unmarshal(normsJSON, &norms); err != nil {
-		return nil, err
-	}
-	var beliefs map[string]any
-	if err := json.Unmarshal(beliefsJSON, &beliefs); err != nil {
-		return nil, err
-	}
+		var norms map[string]any
+		if err := json.Unmarshal(normsJSON, &norms); err != nil {
+			return nil, err
+		}
+		var beliefs map[string]any
+		if err := json.Unmarshal(beliefsJSON, &beliefs); err != nil {
+			return nil, err
+		}
 
-	return &model.CognitiveContext{
-		AgentID:        agentID,
-		Goals:          goals,
-		Constraints:    readStringSlice(norms["constraints"]),
-		WorkingSummary: readString(beliefs["working_summary"]),
-		UpdatedAtMs:    updatedAtMs,
-	}, nil
+		return &model.CognitiveContext{
+			AgentID:        agentID,
+			Goals:          goals,
+			Constraints:    readStringSlice(norms["constraints"]),
+			WorkingSummary: readString(beliefs["working_summary"]),
+			UpdatedAtMs:    updatedAtMs,
+		}, nil
+	})
+	if err != nil {
+		c.metrics.IncDependencyError("postgres", "get_cognitive_context")
+	}
+	return value, err
 }
 
 func (c *Client) UpdateCognitiveContext(ctx context.Context, agentID string, cognitive *model.CognitiveContext) error {
@@ -318,7 +386,15 @@ ON CONFLICT (agent_id) DO UPDATE SET
 	beliefs = EXCLUDED.beliefs,
 	updated_at = EXCLUDED.updated_at
 `
-	_, err = c.pool.Exec(ctx, query, agentID, goalsJSON, normsJSON, beliefsJSON, cognitive.UpdatedAtMs)
+	err = resilience.Do(ctx, c.retry, func(attemptCtx context.Context) error {
+		callCtx, cancel := context.WithTimeout(attemptCtx, 300*time.Millisecond)
+		defer cancel()
+		_, execErr := c.pool.Exec(callCtx, query, agentID, goalsJSON, normsJSON, beliefsJSON, cognitive.UpdatedAtMs)
+		return execErr
+	})
+	if err != nil {
+		c.metrics.IncDependencyError("postgres", "update_cognitive_context")
+	}
 	return err
 }
 
@@ -359,18 +435,30 @@ INSERT INTO interaction_log (
 	$10
 )
 `
-	_, err = c.pool.Exec(ctx, query,
-		entry.AgentID,
-		entry.CreatedAtMs,
-		entry.UserText,
-		entry.Stimulus,
-		entry.FsmState.StateName,
-		emotionJSON,
-		entry.Intensity,
-		entry.ResponseText,
-		0,
-		"",
-	)
+	err = resilience.Do(ctx, resilience.RetryPolicy{
+		Attempts:  1,
+		BaseDelay: c.retry.BaseDelay,
+		MaxDelay:  c.retry.MaxDelay,
+	}, func(attemptCtx context.Context) error {
+		callCtx, cancel := context.WithTimeout(attemptCtx, 300*time.Millisecond)
+		defer cancel()
+		_, execErr := c.pool.Exec(callCtx, query,
+			entry.AgentID,
+			entry.CreatedAtMs,
+			entry.UserText,
+			entry.Stimulus,
+			entry.FsmState.StateName,
+			emotionJSON,
+			entry.Intensity,
+			entry.ResponseText,
+			0,
+			"",
+		)
+		return execErr
+	})
+	if err != nil {
+		c.metrics.IncDependencyError("postgres", "log_interaction")
+	}
 	return err
 }
 
@@ -381,39 +469,48 @@ FROM interaction_log
 WHERE agent_id = $1
 ORDER BY timestamp ASC
 `
-	rows, err := c.pool.Query(ctx, query, agentID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
+	logs, err := resilience.DoValue(ctx, c.retry, func(attemptCtx context.Context) ([]model.InteractionLog, error) {
+		callCtx, cancel := context.WithTimeout(attemptCtx, 300*time.Millisecond)
+		defer cancel()
 
-	logs := make([]model.InteractionLog, 0)
-	for rows.Next() {
-		var (
-			entry       model.InteractionLog
-			fsmState    string
-			emotionJSON []byte
-		)
-		if err := rows.Scan(
-			&entry.UserText,
-			&entry.ResponseText,
-			&entry.Stimulus,
-			&fsmState,
-			&emotionJSON,
-			&entry.Intensity,
-			&entry.CreatedAtMs,
-		); err != nil {
-			return nil, err
-		}
-		entry.AgentID = agentID
-		entry.FsmState = model.FsmState{StateName: fsmState}
-		entry.Emotion, err = decodeEmotionVector(emotionJSON)
+		rows, err := c.pool.Query(callCtx, query, agentID)
 		if err != nil {
 			return nil, err
 		}
-		logs = append(logs, entry)
+		defer rows.Close()
+
+		result := make([]model.InteractionLog, 0)
+		for rows.Next() {
+			var (
+				entry       model.InteractionLog
+				fsmState    string
+				emotionJSON []byte
+			)
+			if err := rows.Scan(
+				&entry.UserText,
+				&entry.ResponseText,
+				&entry.Stimulus,
+				&fsmState,
+				&emotionJSON,
+				&entry.Intensity,
+				&entry.CreatedAtMs,
+			); err != nil {
+				return nil, err
+			}
+			entry.AgentID = agentID
+			entry.FsmState = model.FsmState{StateName: fsmState}
+			entry.Emotion, err = decodeEmotionVector(emotionJSON)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, entry)
+		}
+		return result, rows.Err()
+	})
+	if err != nil {
+		c.metrics.IncDependencyError("postgres", "get_interaction_logs")
 	}
-	return logs, rows.Err()
+	return logs, err
 }
 
 func (c *Client) AppendEmotionHistory(ctx context.Context, entry *model.EmotionHistoryEntry) error {
@@ -432,13 +529,25 @@ func (c *Client) AppendEmotionHistory(ctx context.Context, entry *model.EmotionH
 INSERT INTO emotion_history (agent_id, timestamp, emotion, intensity, fsm_state)
 VALUES ($1, to_timestamp($2 / 1000.0), $3::jsonb, $4, $5)
 `
-	_, err = c.pool.Exec(ctx, query,
-		entry.AgentID,
-		entry.CreatedAtMs,
-		emotionJSON,
-		entry.Intensity,
-		entry.FsmState.StateName,
-	)
+	err = resilience.Do(ctx, resilience.RetryPolicy{
+		Attempts:  1,
+		BaseDelay: c.retry.BaseDelay,
+		MaxDelay:  c.retry.MaxDelay,
+	}, func(attemptCtx context.Context) error {
+		callCtx, cancel := context.WithTimeout(attemptCtx, 300*time.Millisecond)
+		defer cancel()
+		_, execErr := c.pool.Exec(callCtx, query,
+			entry.AgentID,
+			entry.CreatedAtMs,
+			emotionJSON,
+			entry.Intensity,
+			entry.FsmState.StateName,
+		)
+		return execErr
+	})
+	if err != nil {
+		c.metrics.IncDependencyError("postgres", "append_emotion_history")
+	}
 	return err
 }
 
@@ -449,31 +558,40 @@ FROM emotion_history
 WHERE agent_id = $1
 ORDER BY timestamp ASC
 `
-	rows, err := c.pool.Query(ctx, query, agentID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
+	out, err := resilience.DoValue(ctx, c.retry, func(attemptCtx context.Context) ([]model.EmotionHistoryEntry, error) {
+		callCtx, cancel := context.WithTimeout(attemptCtx, 300*time.Millisecond)
+		defer cancel()
 
-	out := make([]model.EmotionHistoryEntry, 0)
-	for rows.Next() {
-		var (
-			entry       model.EmotionHistoryEntry
-			fsmState    string
-			emotionJSON []byte
-		)
-		if err := rows.Scan(&fsmState, &emotionJSON, &entry.Intensity, &entry.CreatedAtMs); err != nil {
-			return nil, err
-		}
-		entry.AgentID = agentID
-		entry.FsmState = model.FsmState{StateName: fsmState}
-		entry.Emotion, err = decodeEmotionVector(emotionJSON)
+		rows, err := c.pool.Query(callCtx, query, agentID)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, entry)
+		defer rows.Close()
+
+		result := make([]model.EmotionHistoryEntry, 0)
+		for rows.Next() {
+			var (
+				entry       model.EmotionHistoryEntry
+				fsmState    string
+				emotionJSON []byte
+			)
+			if err := rows.Scan(&fsmState, &emotionJSON, &entry.Intensity, &entry.CreatedAtMs); err != nil {
+				return nil, err
+			}
+			entry.AgentID = agentID
+			entry.FsmState = model.FsmState{StateName: fsmState}
+			entry.Emotion, err = decodeEmotionVector(emotionJSON)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, entry)
+		}
+		return result, rows.Err()
+	})
+	if err != nil {
+		c.metrics.IncDependencyError("postgres", "get_emotion_history")
 	}
-	return out, rows.Err()
+	return out, err
 }
 
 func (c *Client) ensureSchema(ctx context.Context) error {

@@ -11,6 +11,8 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"github.com/swarm-emotions/orchestrator/internal/model"
+	"github.com/swarm-emotions/orchestrator/internal/observability"
+	"github.com/swarm-emotions/orchestrator/internal/resilience"
 )
 
 const (
@@ -31,6 +33,8 @@ type Client struct {
 
 	lockMu     sync.Mutex
 	lockTokens map[string]string
+	metrics    observability.Reporter
+	retry      resilience.RetryPolicy
 }
 
 func NewClient(addr string) *Client {
@@ -43,6 +47,12 @@ func NewClient(addr string) *Client {
 			PoolTimeout:  500 * time.Millisecond,
 		}),
 		lockTokens: make(map[string]string),
+		metrics:    observability.NewNoopReporter(),
+		retry: resilience.RetryPolicy{
+			Attempts:  2,
+			BaseDelay: 5 * time.Millisecond,
+			MaxDelay:  40 * time.Millisecond,
+		},
 	}
 }
 
@@ -53,25 +63,45 @@ func (c *Client) Close() error {
 func (c *Client) Ready(ctx context.Context) error {
 	probeCtx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
 	defer cancel()
-	return c.rdb.Ping(probeCtx).Err()
+	err := c.rdb.Ping(probeCtx).Err()
+	if err != nil {
+		c.metrics.IncDependencyError("redis", "ready")
+	}
+	return err
+}
+
+func (c *Client) SetMetricsReporter(reporter observability.Reporter) {
+	if reporter == nil {
+		c.metrics = observability.NewNoopReporter()
+		return
+	}
+	c.metrics = reporter
 }
 
 func (c *Client) GetAgentState(ctx context.Context, agentID string) (*model.AgentState, error) {
-	key := stateKey(agentID)
-	raw, err := c.rdb.Get(ctx, key).Bytes()
-	if err == redis.Nil {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
+	result, err := resilience.DoValue(ctx, c.retry, func(attemptCtx context.Context) (*model.AgentState, error) {
+		callCtx, cancel := context.WithTimeout(attemptCtx, 100*time.Millisecond)
+		defer cancel()
 
-	var state model.AgentState
-	if err := json.Unmarshal(raw, &state); err != nil {
-		return nil, err
+		raw, err := c.rdb.Get(callCtx, stateKey(agentID)).Bytes()
+		if err == redis.Nil {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		var state model.AgentState
+		if err := json.Unmarshal(raw, &state); err != nil {
+			return nil, err
+		}
+		state.AgentID = agentID
+		return &state, nil
+	})
+	if err != nil {
+		c.metrics.IncDependencyError("redis", "get_agent_state")
 	}
-	state.AgentID = agentID
-	return &state, nil
+	return result, err
 }
 
 func (c *Client) SetAgentState(ctx context.Context, agentID string, state *model.AgentState) error {
@@ -86,24 +116,39 @@ func (c *Client) SetAgentState(ctx context.Context, agentID string, state *model
 	if err != nil {
 		return err
 	}
-	return c.rdb.Set(ctx, stateKey(agentID), payload, 0).Err()
+	err = resilience.Do(ctx, c.retry, func(attemptCtx context.Context) error {
+		callCtx, cancel := context.WithTimeout(attemptCtx, 100*time.Millisecond)
+		defer cancel()
+		return c.rdb.Set(callCtx, stateKey(agentID), payload, 0).Err()
+	})
+	if err != nil {
+		c.metrics.IncDependencyError("redis", "set_agent_state")
+	}
+	return err
 }
 
 func (c *Client) GetWorkingMemory(ctx context.Context, agentID string) ([]model.WorkingMemoryEntry, error) {
-	values, err := c.rdb.ZRevRange(ctx, workingMemoryKey(agentID), 0, -1).Result()
-	if err != nil {
-		return nil, err
-	}
-
-	entries := make([]model.WorkingMemoryEntry, 0, len(values))
-	for _, value := range values {
-		var entry model.WorkingMemoryEntry
-		if err := json.Unmarshal([]byte(value), &entry); err != nil {
+	entries, err := resilience.DoValue(ctx, c.retry, func(attemptCtx context.Context) ([]model.WorkingMemoryEntry, error) {
+		callCtx, cancel := context.WithTimeout(attemptCtx, 100*time.Millisecond)
+		defer cancel()
+		values, err := c.rdb.ZRevRange(callCtx, workingMemoryKey(agentID), 0, -1).Result()
+		if err != nil {
 			return nil, err
 		}
-		entries = append(entries, entry)
+		entries := make([]model.WorkingMemoryEntry, 0, len(values))
+		for _, value := range values {
+			var entry model.WorkingMemoryEntry
+			if err := json.Unmarshal([]byte(value), &entry); err != nil {
+				return nil, err
+			}
+			entries = append(entries, entry)
+		}
+		return entries, nil
+	})
+	if err != nil {
+		c.metrics.IncDependencyError("redis", "get_working_memory")
 	}
-	return entries, nil
+	return entries, err
 }
 
 func (c *Client) PushWorkingMemory(ctx context.Context, agentID string, entry model.WorkingMemoryEntry) error {
@@ -114,10 +159,18 @@ func (c *Client) PushWorkingMemory(ctx context.Context, agentID string, entry mo
 	if err != nil {
 		return err
 	}
-	return c.rdb.ZAdd(ctx, workingMemoryKey(agentID), redis.Z{
-		Score:  float64(entry.CreatedAtMs),
-		Member: string(payload),
-	}).Err()
+	err = resilience.Do(ctx, c.retry, func(attemptCtx context.Context) error {
+		callCtx, cancel := context.WithTimeout(attemptCtx, 100*time.Millisecond)
+		defer cancel()
+		return c.rdb.ZAdd(callCtx, workingMemoryKey(agentID), redis.Z{
+			Score:  float64(entry.CreatedAtMs),
+			Member: string(payload),
+		}).Err()
+	})
+	if err != nil {
+		c.metrics.IncDependencyError("redis", "push_working_memory")
+	}
+	return err
 }
 
 func (c *Client) AcquireAgentLock(ctx context.Context, agentID string, ttl time.Duration) (bool, error) {
@@ -129,8 +182,13 @@ func (c *Client) AcquireAgentLock(ctx context.Context, agentID string, ttl time.
 		return false, err
 	}
 
-	locked, err := c.rdb.SetNX(ctx, lockKey(agentID), token, ttl).Result()
+	locked, err := resilience.DoValue(ctx, c.retry, func(attemptCtx context.Context) (bool, error) {
+		callCtx, cancel := context.WithTimeout(attemptCtx, 100*time.Millisecond)
+		defer cancel()
+		return c.rdb.SetNX(callCtx, lockKey(agentID), token, ttl).Result()
+	})
 	if err != nil {
+		c.metrics.IncDependencyError("redis", "acquire_lock")
 		return false, err
 	}
 	if locked {
@@ -146,7 +204,14 @@ func (c *Client) ReleaseAgentLock(ctx context.Context, agentID string) error {
 	if token == "" {
 		return nil
 	}
-	_, err := releaseLockScript.Run(ctx, c.rdb, []string{lockKey(agentID)}, token).Result()
+	_, err := resilience.DoValue(ctx, c.retry, func(attemptCtx context.Context) (any, error) {
+		callCtx, cancel := context.WithTimeout(attemptCtx, 100*time.Millisecond)
+		defer cancel()
+		return releaseLockScript.Run(callCtx, c.rdb, []string{lockKey(agentID)}, token).Result()
+	})
+	if err != nil {
+		c.metrics.IncDependencyError("redis", "release_lock")
+	}
 	return err
 }
 

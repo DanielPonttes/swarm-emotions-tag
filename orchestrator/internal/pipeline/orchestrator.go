@@ -7,6 +7,7 @@ import (
 
 	"github.com/swarm-emotions/orchestrator/internal/connector"
 	"github.com/swarm-emotions/orchestrator/internal/model"
+	"github.com/swarm-emotions/orchestrator/internal/observability"
 )
 
 type Executor interface {
@@ -34,6 +35,7 @@ type Orchestrator struct {
 	db            connector.DBClient
 	llm           connector.LLMProvider
 	classifier    connector.ClassifierClient
+	metrics       observability.Reporter
 	onStep        func(string)
 	runBackground func(func())
 }
@@ -53,6 +55,7 @@ func New(
 		db:            db,
 		llm:           llm,
 		classifier:    classifier,
+		metrics:       observability.NewNoopReporter(),
 		runBackground: func(fn func()) { go fn() },
 	}
 }
@@ -65,11 +68,21 @@ func (o *Orchestrator) SetBackgroundRunner(fn func(func())) {
 	o.runBackground = fn
 }
 
+func (o *Orchestrator) SetMetricsReporter(reporter observability.Reporter) {
+	if reporter == nil {
+		o.metrics = observability.NewNoopReporter()
+		return
+	}
+	o.metrics = reporter
+}
+
 func (o *Orchestrator) Execute(ctx context.Context, input Input) (*Output, error) {
 	start := time.Now()
 	return o.withAgentLock(ctx, input.AgentID, func(runCtx context.Context) (*Output, error) {
 		o.observe("step1_load")
+		stepStart := time.Now()
 		agentState, err := o.cache.GetAgentState(runCtx, input.AgentID)
+		o.metrics.ObserveStepDuration("step1_load", time.Since(stepStart))
 		if err != nil {
 			return nil, fmt.Errorf("step1 get state: %w", err)
 		}
@@ -77,62 +90,84 @@ func (o *Orchestrator) Execute(ctx context.Context, input Input) (*Output, error
 			agentState = model.DefaultAgentState(input.AgentID)
 		}
 
+		stepStart = time.Now()
 		agentConfig, err := o.db.GetAgentConfig(runCtx, input.AgentID)
+		o.metrics.ObserveStepDuration("step1_get_config", time.Since(stepStart))
 		if err != nil {
 			return nil, fmt.Errorf("step1 get config: %w", err)
 		}
 		if agentConfig == nil {
+			stepStart = time.Now()
 			agentConfig = model.DefaultAgentConfig(input.AgentID)
 			if err := o.db.SaveAgentConfig(runCtx, agentConfig); err != nil {
+				o.metrics.ObserveStepDuration("step1_bootstrap_config", time.Since(stepStart))
 				return nil, fmt.Errorf("step1 bootstrap config: %w", err)
 			}
+			o.metrics.ObserveStepDuration("step1_bootstrap_config", time.Since(stepStart))
 		}
 
 		o.observe("step2_perceive")
+		stepStart = time.Now()
 		stimulusVector, stimulusType, err := o.stepPerceive(runCtx, input.Text)
+		o.metrics.ObserveStepDuration("step2_perceive", time.Since(stepStart))
 		if err != nil {
 			return nil, fmt.Errorf("step2 perceive: %w", err)
 		}
 
 		o.observe("step3_fsm_vector")
+		stepStart = time.Now()
 		fsmResult, err := o.stepFSMAndVector(runCtx, agentState, agentConfig, stimulusVector, stimulusType)
+		o.metrics.ObserveStepDuration("step3_fsm_vector", time.Since(stepStart))
 		if err != nil {
 			return nil, fmt.Errorf("step3 fsm+vector: %w", err)
 		}
 
 		o.observe("step4_persist_state")
+		stepStart = time.Now()
 		if err := o.cache.SetAgentState(runCtx, input.AgentID, &model.AgentState{
 			AgentID:         input.AgentID,
 			CurrentEmotion:  fsmResult.NewEmotion,
 			CurrentFsmState: fsmResult.NewFsmState,
 			UpdatedAtMs:     time.Now().UnixMilli(),
 		}); err != nil {
+			o.metrics.ObserveStepDuration("step4_persist_state", time.Since(stepStart))
 			return nil, fmt.Errorf("step4 update state: %w", err)
 		}
+		o.metrics.ObserveStepDuration("step4_persist_state", time.Since(stepStart))
 
 		o.observe("step5_retrieve")
+		stepStart = time.Now()
 		candidates, cognitiveContext, err := o.stepRetrieve(runCtx, input, fsmResult, agentConfig)
+		o.metrics.ObserveStepDuration("step5_retrieve", time.Since(stepStart))
 		if err != nil {
 			return nil, fmt.Errorf("step5 retrieve: %w", err)
 		}
 
 		o.observe("step6_fuse")
+		stepStart = time.Now()
 		ranked, err := o.stepFuse(runCtx, candidates, agentConfig, fsmResult.NewEmotion)
+		o.metrics.ObserveStepDuration("step6_fuse", time.Since(stepStart))
 		if err != nil {
 			return nil, fmt.Errorf("step6 fuse: %w", err)
 		}
 
 		o.observe("step7_generate")
+		stepStart = time.Now()
 		llmResponse, err := o.stepGenerate(runCtx, input, ranked, fsmResult, cognitiveContext)
+		o.metrics.ObserveStepDuration("step7_generate", time.Since(stepStart))
 		if err != nil {
 			return nil, fmt.Errorf("step7 generate: %w", err)
 		}
 
 		o.observe("step8_postprocess_dispatch")
+		stepStart = time.Now()
 		o.runBackground(func() {
 			o.observe("step8_postprocess")
+			backgroundStart := time.Now()
 			o.stepPostProcess(context.Background(), input, llmResponse, fsmResult, ranked)
+			o.metrics.ObserveStepDuration("step8_postprocess", time.Since(backgroundStart))
 		})
+		o.metrics.ObserveStepDuration("step8_postprocess_dispatch", time.Since(stepStart))
 
 		return &Output{
 			LLMResponse:  llmResponse,

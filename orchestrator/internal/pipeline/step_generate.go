@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"time"
 
 	"github.com/swarm-emotions/orchestrator/internal/connector"
 	"github.com/swarm-emotions/orchestrator/internal/model"
@@ -14,7 +15,7 @@ func (o *Orchestrator) stepGenerate(
 	fsmResult *FSMResult,
 	cognitive *model.CognitiveContext,
 ) (string, error) {
-	stepCtx, cancel := withStepTimeout(ctx, 0.3, 500000000)
+	stepCtx, cancel := withStepTimeout(ctx, 0.45, 2*time.Second)
 	defer cancel()
 
 	prompt := buildPrompt(input, ranked, fsmResult, cognitive)

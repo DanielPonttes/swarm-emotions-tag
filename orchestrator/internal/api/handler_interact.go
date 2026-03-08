@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
+	"github.com/swarm-emotions/orchestrator/internal/connector"
 	"github.com/swarm-emotions/orchestrator/internal/model"
 	"github.com/swarm-emotions/orchestrator/internal/pipeline"
 )
@@ -27,6 +28,10 @@ func (h *Handlers) Interact(w http.ResponseWriter, r *http.Request) {
 		Metadata: req.Metadata,
 	})
 	if err != nil {
+		if connector.IsDependencyUnavailable(err) {
+			respondError(w, r, http.StatusServiceUnavailable, connector.ErrDependencyUnavailable.Error())
+			return
+		}
 		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}

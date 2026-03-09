@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.23"
+          go-version: "1.24"
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - name: Install proto plugins
@@ -50,6 +50,42 @@ jobs:
           working-directory: orchestrator
       - name: Go test
         run: cd orchestrator && go test ./...
+
+  go-integration:
+    name: Go Integration
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+      postgresql:
+        image: postgres:17-alpine
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_DB: emotionrag
+          POSTGRES_USER: emotionrag
+          POSTGRES_PASSWORD: dev_password_change_me
+      qdrant:
+        image: qdrant/qdrant:v1.12.1
+        ports:
+          - 6333:6333
+          - 6334:6334
+        env:
+          QDRANT__SERVICE__GRPC_PORT: 6334
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: Wait for service readiness
+        run: |
+          until (echo >/dev/tcp/127.0.0.1/6379) >/dev/null 2>&1; do sleep 1; done
+          until (echo >/dev/tcp/127.0.0.1/5432) >/dev/null 2>&1; do sleep 1; done
+          until curl -fsS http://127.0.0.1:6333/collections >/dev/null; do sleep 1; done
+      - name: Go integration tests
+        run: cd orchestrator && go test -count=1 -tags=integration -v ./internal/connector/cache ./internal/connector/db ./internal/connector/vectorstore
 
   proto:
     name: Proto

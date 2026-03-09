@@ -997,3 +997,48 @@ Entrada na Fase 3 permitida apos rodar em ambiente habilitado (Go + Docker daemo
 2. `go test -tags=integration -v ./internal/connector/cache ./internal/connector/db ./internal/connector/vectorstore`
 3. `go test -tags=stability -run TestStability_NoGoroutineLeakUnderLoad -v ./internal/pipeline`
 4. Smoke test de `POST /api/v1/interact` com `USE_MOCK_CONNECTORS=false`
+
+---
+
+## 2.13 Continuacao Executada (2026-03-09)
+
+Objetivo desta continuacao: transformar o fechamento do Bloco C em um fluxo reproduzivel, sem depender apenas de execucao manual no terminal.
+
+### 2.13.1 Automacao adicionada
+
+- CI ampliado com job `Go Integration`, usando Redis, PostgreSQL e Qdrant reais via `services` do GitHub Actions.
+- `Makefile` ampliado com:
+  - `make test-go-integration`
+  - `make phase2-smoke-real`
+  - `make phase2-stability-real`
+- Script local `scripts/phase2/smoke_real.sh` para:
+  - subir Redis/PostgreSQL/Qdrant/emotion-engine/python-ml via `docker compose`
+  - iniciar o orquestrador local com `USE_MOCK_CONNECTORS=false`
+  - validar `POST /api/v1/interact` ponta a ponta
+- Script local `scripts/phase2/stability_real.sh` para:
+  - subir o mesmo stack real
+  - executar carga sustentada no endpoint `/api/v1/interact`
+  - capturar pprof de goroutines antes/depois
+  - falhar se o delta de goroutines exceder o limite configurado
+- Ferramenta auxiliar `orchestrator/cmd/loadtest` para gerar carga HTTP reproduzivel no orquestrador durante a homologacao de estabilidade.
+
+### 2.13.2 Status atualizado apos esta continuacao
+
+- `go test ./...` executado em **2026-03-09**: **PASS**.
+- `go test -tags=stability -run TestStability_NoGoroutineLeakUnderLoad -v ./internal/pipeline` executado em **2026-03-09**: **PASS**.
+- Suite de integracao real em ambiente limpo:
+  - **automatizada** no CI e via `make test-go-integration`
+  - **pendente de execucao neste workspace** por ausencia de Docker local
+- Smoke real de `POST /api/v1/interact`:
+  - **automatizado** via `make phase2-smoke-real`
+  - **pendente de execucao neste workspace** por ausencia de Docker local
+- Estabilidade longa com coleta pprof:
+  - **automatizada** via `make phase2-stability-real`
+  - **pendente de execucao em ambiente com Docker habilitado**
+
+### 2.13.3 Proxima sequencia objetiva
+
+1. Em ambiente com Docker habilitado, rodar `make test-go-integration`.
+2. Em seguida, rodar `make phase2-smoke-real`.
+3. Para homologacao final, rodar `RPS=20 DURATION_SEC=300 make phase2-stability-real`.
+4. Se os tres itens passarem, atualizar `2.11.4` e considerar o gate da Fase 3 atendido.

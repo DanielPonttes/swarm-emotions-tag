@@ -14,6 +14,9 @@ help:
 	@echo "  make docker-up     - Sobe todos os servicos via docker compose"
 	@echo "  make docker-down   - Para todos os servicos"
 	@echo "  make docker-infra  - Sobe apenas Qdrant, PostgreSQL e Redis"
+	@echo "  make test-go-integration - Roda integracao real dos connectors Go"
+	@echo "  make phase2-smoke-real   - Smoke test local do /interact com deps reais"
+	@echo "  make phase2-stability-real - Carga longa com pprof para fechar a Fase 2"
 	@echo "  make clean         - Limpa artefatos de build"
 
 .PHONY: build build-rust build-go
@@ -34,6 +37,10 @@ test-rust:
 
 test-go:
 	cd orchestrator && go test ./...
+
+.PHONY: test-go-integration
+test-go-integration:
+	cd orchestrator && go test -count=1 -tags=integration -v ./internal/connector/cache ./internal/connector/db ./internal/connector/vectorstore
 
 .PHONY: lint lint-rust lint-go
 lint: lint-rust lint-go
@@ -78,6 +85,13 @@ docker-infra:
 docker-build:
 	docker compose build
 
+.PHONY: phase2-smoke-real phase2-stability-real
+phase2-smoke-real:
+	./scripts/phase2/smoke_real.sh
+
+phase2-stability-real:
+	./scripts/phase2/stability_real.sh
+
 .PHONY: bench
 bench:
 	cd emotion-engine && cargo bench
@@ -87,4 +101,3 @@ clean:
 	cd emotion-engine && cargo clean
 	cd orchestrator && go clean
 	rm -rf bin/
-

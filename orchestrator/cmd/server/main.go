@@ -121,7 +121,28 @@ func main() {
 		}
 		classifierReal := classifier.NewClient(cfg.PythonMLURL)
 		classifierReal.SetMetricsReporter(metricsReporter)
-		classifierClient = classifierReal
+
+		var classifierRuntime connector.ClassifierClient = classifierReal
+		if cfg.ClassifierCacheEnabled {
+			cachedClassifier := classifier.NewCachedClient(
+				classifierRuntime,
+				cfg.RedisAddr,
+				time.Duration(cfg.ClassifierCacheTTLSeconds)*time.Second,
+			)
+			cachedClassifier.SetMetricsReporter(metricsReporter)
+			classifierRuntime = cachedClassifier
+			cleanups = append(cleanups, func() {
+				if err := cachedClassifier.Close(); err != nil {
+					slog.Warn("close classifier cache", "error", err)
+				}
+			})
+		}
+		if cfg.ClassifierFallbackNeutral {
+			fallbackClassifier := classifier.NewFallbackClient(classifierRuntime)
+			fallbackClassifier.SetMetricsReporter(metricsReporter)
+			classifierRuntime = fallbackClassifier
+		}
+		classifierClient = classifierRuntime
 	}
 
 	readyChecks = append(readyChecks, cacheClient, dbClient, llmProvider, classifierClient)

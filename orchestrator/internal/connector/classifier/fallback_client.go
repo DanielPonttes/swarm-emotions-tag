@@ -35,12 +35,17 @@ func (c *FallbackClient) Ready(ctx context.Context) error {
 }
 
 func (c *FallbackClient) ClassifyEmotion(ctx context.Context, text string) (*connector.EmotionClassification, error) {
+	metrics := c.metrics
+	if metrics == nil {
+		metrics = observability.NewNoopReporter()
+	}
+
 	result, err := c.inner.ClassifyEmotion(ctx, text)
 	if err == nil {
 		return result, nil
 	}
 
-	c.metrics.IncDependencyError("classifier", "fallback_neutral")
+	metrics.IncDependencyError("classifier", "fallback_neutral")
 	return &connector.EmotionClassification{
 		Vector:     model.EmotionVector{Components: append([]float32(nil), neutralEmotionVector...)},
 		Label:      "neutral",

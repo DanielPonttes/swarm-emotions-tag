@@ -629,6 +629,9 @@ inicial em `Qwen/Qwen3.5-27B`, sem bloquear o restante do pipeline E2E.
 ### 3.7.1 Foundation entregue
 
 - Provider LLM real adicionado no orquestrador via API `openai-compatible`.
+- Connector do classifier no Go preparado com:
+  - cache Redis de classificacoes
+  - fallback para vetor neutro em falha runtime do Python
 - Configuracao de geracao externalizada em env:
   - `LLM_PROVIDER`
   - `LLM_BASE_URL`
@@ -641,6 +644,9 @@ inicial em `Qwen/Qwen3.5-27B`, sem bloquear o restante do pipeline E2E.
   - `LLM_PRESENCE_PENALTY`
   - `LLM_ENABLE_THINKING`
 - `docker-compose.yml` preparado para consumir um servidor LLM local exposto no host.
+- `python-ml` preparado com dois modos:
+  - `heuristic` para smoke/dev
+  - `transformers` para o modelo real de GoEmotions
 - `README.md` atualizado com o bootstrap do Qwen local no modo recomendado para o pipeline atual.
 
 ### 3.7.2 Decisao tecnica para o primeiro corte
@@ -669,7 +675,7 @@ controlada antes de evoluir para streaming, traces distribuidos e tuning fino.
 
 ### 3.7.4 Pendencias ainda abertas da Fase 3
 
-- Python classifier continua em modo stub e ainda nao usa o modelo real de GoEmotions.
+- Python classifier real ja esta preparado, mas ainda depende de execucao com extras `ml` e validacao E2E no ambiente alvo.
 - Trace distribuido Go -> Rust ainda nao foi ligado.
 - Transporte Go -> Rust ainda usa TCP; Unix socket segue pendente.
 - Suite E2E single-agent com LLM real ainda nao foi implementada.

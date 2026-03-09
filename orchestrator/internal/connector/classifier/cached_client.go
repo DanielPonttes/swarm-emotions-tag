@@ -87,6 +87,11 @@ func (c *CachedClient) Close() error {
 }
 
 func (c *CachedClient) ClassifyEmotion(ctx context.Context, text string) (*connector.EmotionClassification, error) {
+	metrics := c.metrics
+	if metrics == nil {
+		metrics = observability.NewNoopReporter()
+	}
+
 	cacheKey := classifierCacheKey(text)
 	if c.cache != nil {
 		cached, err := c.cache.Get(ctx, cacheKey)
@@ -96,7 +101,7 @@ func (c *CachedClient) ClassifyEmotion(ctx context.Context, text string) (*conne
 				return &result, nil
 			}
 		} else {
-			c.metrics.IncDependencyError("redis", "classifier_cache_get")
+			metrics.IncDependencyError("redis", "classifier_cache_get")
 		}
 	}
 
@@ -109,7 +114,7 @@ func (c *CachedClient) ClassifyEmotion(ctx context.Context, text string) (*conne
 		payload, marshalErr := json.Marshal(result)
 		if marshalErr == nil {
 			if setErr := c.cache.Set(ctx, cacheKey, payload, c.ttl); setErr != nil {
-				c.metrics.IncDependencyError("redis", "classifier_cache_set")
+				metrics.IncDependencyError("redis", "classifier_cache_set")
 			}
 		}
 	}

@@ -72,6 +72,26 @@ Observacoes praticas para a Fase 3:
 - O provider real so depende de uma API OpenAI-compatible; o servidor do modelo
   pode ser trocado sem alterar o codigo Go.
 
+## Classificador Python (Fase 3)
+
+O `python-ml` agora suporta dois modos:
+
+- `CLASSIFIER_MODE=heuristic`: leve, sem dependencias extras, bom para smoke e desenvolvimento.
+- `CLASSIFIER_MODE=transformers`: carrega `monologg/bert-base-cased-goemotions-original` ou outro modelo compatível.
+
+Para ativar o modo com modelo real em ambiente local:
+
+```bash
+cd python-ml
+.venv/bin/python -m pip install -e '.[ml]'
+CLASSIFIER_MODE=transformers CLASSIFIER_DEVICE=cuda:0 .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8090
+```
+
+No orquestrador:
+
+- `CLASSIFIER_CACHE_ENABLED=true` ativa cache Redis das classificacoes.
+- `CLASSIFIER_FALLBACK_NEUTRAL=true` faz fallback para vetor neutro se o Python falhar em runtime.
+
 ## Endpoints
 
 - Orchestrator: `GET /health`, `GET /ready`, `POST /api/v1/interact`,

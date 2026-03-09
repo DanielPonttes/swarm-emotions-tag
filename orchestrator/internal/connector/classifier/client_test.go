@@ -12,10 +12,10 @@ func TestClientClassifyEmotion(t *testing.T) {
 		switch r.URL.Path {
 		case "/health":
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"status":"ok","model_loaded":true}`))
+			_, _ = w.Write([]byte(`{"status":"ok","model_loaded":true,"classifier_mode":"heuristic","model_name":"test-model"}`))
 		case "/classify-emotion":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"emotion_vector":[0.1,0.2,0.3,0.4,0.5,0.6],"label":"joyful","confidence":0.95}`))
+			_, _ = w.Write([]byte(`{"emotion_vector":[0.1,0.2,0.3,0.4,0.5,0.6],"label":"gratitude","confidence":0.95}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -31,10 +31,23 @@ func TestClientClassifyEmotion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("classify emotion: %v", err)
 	}
-	if result.Label != "joyful" {
-		t.Fatalf("expected joyful, got %s", result.Label)
+	if result.Label != "gratitude" {
+		t.Fatalf("expected gratitude, got %s", result.Label)
 	}
 	if result.Stimulus != "praise" {
 		t.Fatalf("expected stimulus praise, got %s", result.Stimulus)
+	}
+}
+
+func TestClientReadyFailsWhenModelIsNotLoaded(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"degraded","model_loaded":false,"classifier_mode":"transformers","model_name":"broken-model","load_error":"weights missing"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL)
+	if err := client.Ready(context.Background()); err == nil || err.Error() != "classifier model not loaded: weights missing" {
+		t.Fatalf("unexpected ready error: %v", err)
 	}
 }

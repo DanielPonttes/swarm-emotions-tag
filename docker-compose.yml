@@ -52,6 +52,9 @@ services:
       REDIS_ADDR: redis:6379
       POSTGRES_DSN: postgres://emotionrag:dev_password_change_me@postgresql:5432/emotionrag?sslmode=disable
       PYTHON_ML_URL: http://python-ml:8090
+      CLASSIFIER_CACHE_ENABLED: ${CLASSIFIER_CACHE_ENABLED:-true}
+      CLASSIFIER_CACHE_TTL_SEC: ${CLASSIFIER_CACHE_TTL_SEC:-21600}
+      CLASSIFIER_FALLBACK_NEUTRAL: ${CLASSIFIER_FALLBACK_NEUTRAL:-true}
       LLM_PROVIDER: ${LLM_PROVIDER:-mock}
       LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:8000/v1}
       LLM_API_KEY: ${LLM_API_KEY:-}
@@ -76,12 +79,18 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.python-ml
+      args:
+        PYTHON_ML_INSTALL_EXTRAS: ${PYTHON_ML_INSTALL_EXTRAS:-}
     ports:
       - "8090:8090"
     environment:
       PORT: 8090
       MODEL_NAME: monologg/bert-base-cased-goemotions-original
       EMBEDDING_MODEL: all-MiniLM-L6-v2
+      CLASSIFIER_MODE: ${CLASSIFIER_MODE:-heuristic}
+      CLASSIFIER_MODEL_NAME: ${CLASSIFIER_MODEL_NAME:-monologg/bert-base-cased-goemotions-original}
+      CLASSIFIER_DEVICE: ${CLASSIFIER_DEVICE:-cpu}
+      CLASSIFIER_TOP_K: ${CLASSIFIER_TOP_K:-5}
 
 volumes:
   qdrant_data:

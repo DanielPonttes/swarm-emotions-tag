@@ -35,6 +35,7 @@ type Orchestrator struct {
 	db            connector.DBClient
 	llm           connector.LLMProvider
 	classifier    connector.ClassifierClient
+	generateOpts  connector.GenerateOpts
 	metrics       observability.Reporter
 	onStep        func(string)
 	runBackground func(func())
@@ -55,6 +56,16 @@ func New(
 		db:            db,
 		llm:           llm,
 		classifier:    classifier,
+		generateOpts: connector.GenerateOpts{
+			Model:           "mock-llm",
+			SystemPrompt:    "You are a concise and emotionally coherent assistant.",
+			MaxTokens:       256,
+			Temperature:     0.2,
+			TopP:            0.8,
+			TopK:            20,
+			PresencePenalty: 0,
+			EnableThinking:  false,
+		},
 		metrics:       observability.NewNoopReporter(),
 		runBackground: func(fn func()) { go fn() },
 	}
@@ -74,6 +85,10 @@ func (o *Orchestrator) SetMetricsReporter(reporter observability.Reporter) {
 		return
 	}
 	o.metrics = reporter
+}
+
+func (o *Orchestrator) SetGenerateOpts(opts connector.GenerateOpts) {
+	o.generateOpts = opts
 }
 
 func (o *Orchestrator) Execute(ctx context.Context, input Input) (*Output, error) {

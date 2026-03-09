@@ -95,9 +95,14 @@ type QueryEmotionalParams struct {
 }
 
 type GenerateOpts struct {
-	Model       string
-	MaxTokens   int
-	Temperature float32
+	Model           string
+	SystemPrompt    string
+	MaxTokens       int
+	Temperature     float32
+	TopP            float32
+	TopK            int
+	PresencePenalty float32
+	EnableThinking  bool
 }
 
 type EmotionClassification struct {

@@ -30,6 +30,14 @@ type classifyResponse struct {
 	Confidence    float32   `json:"confidence"`
 }
 
+type healthResponse struct {
+	Status         string `json:"status"`
+	ModelLoaded    bool   `json:"model_loaded"`
+	ClassifierMode string `json:"classifier_mode"`
+	ModelName      string `json:"model_name"`
+	LoadError      string `json:"load_error"`
+}
+
 func NewClient(baseURL string) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
@@ -62,6 +70,18 @@ func (c *Client) Ready(ctx context.Context) error {
 	if resp.StatusCode != http.StatusOK {
 		c.metrics.IncDependencyError("classifier", "ready")
 		return fmt.Errorf("classifier health returned %d", resp.StatusCode)
+	}
+	var decoded healthResponse
+	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		c.metrics.IncDependencyError("classifier", "ready")
+		return fmt.Errorf("decode classifier health: %w", err)
+	}
+	if !decoded.ModelLoaded {
+		c.metrics.IncDependencyError("classifier", "ready")
+		if strings.TrimSpace(decoded.LoadError) != "" {
+			return fmt.Errorf("classifier model not loaded: %s", decoded.LoadError)
+		}
+		return fmt.Errorf("classifier model not loaded")
 	}
 	return nil
 }
@@ -103,6 +123,7 @@ func (c *Client) ClassifyEmotion(ctx context.Context, text string) (*connector.E
 
 func inferStimulus(text, label string) string {
 	lowered := strings.ToLower(text)
+	normalizedLabel := strings.ToLower(strings.TrimSpace(label))
 	switch {
 	case strings.Contains(lowered, "urgent") || strings.Contains(lowered, "asap"):
 		return "urgency"
@@ -110,9 +131,11 @@ func inferStimulus(text, label string) string {
 		return "praise"
 	case strings.Contains(lowered, "problem") || strings.Contains(lowered, "wrong"):
 		return "failure"
-	case label == "joyful":
+	case normalizedLabel == "gratitude" || normalizedLabel == "admiration" || normalizedLabel == "approval" || normalizedLabel == "joy" || normalizedLabel == "optimism" || normalizedLabel == "excitement":
 		return "praise"
-	case label == "worried" || label == "frustrated":
+	case normalizedLabel == "fear" || normalizedLabel == "nervousness" || normalizedLabel == "confusion":
+		return "urgency"
+	case normalizedLabel == "anger" || normalizedLabel == "annoyance" || normalizedLabel == "disappointment" || normalizedLabel == "disapproval" || normalizedLabel == "sadness" || normalizedLabel == "grief":
 		return "mild_criticism"
 	default:
 		return "novelty"

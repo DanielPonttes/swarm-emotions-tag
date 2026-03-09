@@ -46,6 +46,32 @@ Para subir tudo:
 make docker-up
 ```
 
+## LLM real local (Qwen3.5-27B)
+
+O orquestrador agora aceita provider `openai-compatible`, adequado para servir
+o Qwen localmente por um endpoint estilo OpenAI (`/v1/models`,
+`/v1/chat/completions`).
+
+Configuracao recomendada no host:
+
+```bash
+export LLM_PROVIDER=openai-compatible
+export LLM_BASE_URL=http://127.0.0.1:8000/v1
+export LLM_MODEL=Qwen/Qwen3.5-27B
+export LLM_ENABLE_THINKING=false
+```
+
+Se voce rodar o orquestrador via `docker compose`, o compose ja aponta para
+`http://host.docker.internal:8000/v1` por padrao quando `LLM_PROVIDER` sair de
+`mock`.
+
+Observacoes praticas para a Fase 3:
+
+- Comece com respostas curtas (`LLM_MAX_TOKENS=256`) para reduzir latencia.
+- Mantenha `LLM_ENABLE_THINKING=false` neste pipeline inicial.
+- O provider real so depende de uma API OpenAI-compatible; o servidor do modelo
+  pode ser trocado sem alterar o codigo Go.
+
 ## Endpoints
 
 - Orchestrator: `GET /health`, `GET /ready`, `POST /api/v1/interact`,

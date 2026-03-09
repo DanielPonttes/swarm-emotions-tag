@@ -52,14 +52,25 @@ services:
       REDIS_ADDR: redis:6379
       POSTGRES_DSN: postgres://emotionrag:dev_password_change_me@postgresql:5432/emotionrag?sslmode=disable
       PYTHON_ML_URL: http://python-ml:8090
-      LLM_PROVIDER: openai
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:8000/v1}
       LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-Qwen/Qwen3.5-27B}
+      LLM_SYSTEM_PROMPT: ${LLM_SYSTEM_PROMPT:-You are a concise and emotionally coherent assistant. Reply briefly, helpfully, and stay aligned with the provided emotional context.}
+      LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-256}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.2}
+      LLM_TOP_P: ${LLM_TOP_P:-0.8}
+      LLM_TOP_K: ${LLM_TOP_K:-20}
+      LLM_PRESENCE_PENALTY: ${LLM_PRESENCE_PENALTY:-0.0}
+      LLM_ENABLE_THINKING: ${LLM_ENABLE_THINKING:-false}
     depends_on:
       - emotion-engine
       - qdrant
       - postgresql
       - redis
       - python-ml
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   python-ml:
     build:

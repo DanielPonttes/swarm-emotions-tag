@@ -621,6 +621,61 @@ func TestLatency_PipelineWithoutLLM(t *testing.T) {
 
 ---
 
+## 3.7 Continuacao Executada (2026-03-09)
+
+Objetivo desta continuacao: preparar a entrada do LLM real na Fase 3 com foco
+inicial em `Qwen/Qwen3.5-27B`, sem bloquear o restante do pipeline E2E.
+
+### 3.7.1 Foundation entregue
+
+- Provider LLM real adicionado no orquestrador via API `openai-compatible`.
+- Configuracao de geracao externalizada em env:
+  - `LLM_PROVIDER`
+  - `LLM_BASE_URL`
+  - `LLM_MODEL`
+  - `LLM_SYSTEM_PROMPT`
+  - `LLM_MAX_TOKENS`
+  - `LLM_TEMPERATURE`
+  - `LLM_TOP_P`
+  - `LLM_TOP_K`
+  - `LLM_PRESENCE_PENALTY`
+  - `LLM_ENABLE_THINKING`
+- `docker-compose.yml` preparado para consumir um servidor LLM local exposto no host.
+- `README.md` atualizado com o bootstrap do Qwen local no modo recomendado para o pipeline atual.
+
+### 3.7.2 Decisao tecnica para o primeiro corte
+
+- Modelo alvo inicial: `Qwen/Qwen3.5-27B`
+- Modo inicial: `LLM_ENABLE_THINKING=false`
+- Perfil de resposta inicial:
+  - `LLM_MAX_TOKENS=256`
+  - `LLM_TEMPERATURE=0.2`
+  - foco em respostas curtas e coerentes, nao em cadeias longas de raciocinio
+
+Motivo: este pipeline ainda constroi um prompt simples e espera uma resposta
+textual curta; o primeiro objetivo e integrar um LLM real com latencia
+controlada antes de evoluir para streaming, traces distribuidos e tuning fino.
+
+### 3.7.3 Sequencia recomendada a partir daqui
+
+1. Subir um servidor local OpenAI-compatible para `Qwen/Qwen3.5-27B`.
+2. Rodar o orquestrador com `LLM_PROVIDER=openai-compatible`.
+3. Validar `GET /ready` e um `POST /api/v1/interact` com Rust/Python reais.
+4. Medir latencia por turno com `LLM_MAX_TOKENS=256`.
+5. So depois disso seguir para:
+   - Unix domain socket Go <-> Rust
+   - cache Redis do classifier
+   - testes E2E de 20 turnos
+
+### 3.7.4 Pendencias ainda abertas da Fase 3
+
+- Python classifier continua em modo stub e ainda nao usa o modelo real de GoEmotions.
+- Trace distribuido Go -> Rust ainda nao foi ligado.
+- Transporte Go -> Rust ainda usa TCP; Unix socket segue pendente.
+- Suite E2E single-agent com LLM real ainda nao foi implementada.
+
+---
+
 ## 3.7 Transicao para Fase 4 e 5
 
 Ao final da Fase 3:

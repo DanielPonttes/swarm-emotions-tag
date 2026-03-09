@@ -34,6 +34,7 @@ func main() {
 		emotionClient     connector.EmotionEngineClient
 		vectorStoreClient connector.VectorStoreClient
 		llmProvider       connector.LLMProvider
+		activeLLMProvider string
 		classifierClient  connector.ClassifierClient
 		readyChecks       []connector.ReadyChecker
 		cleanups          []func()
@@ -52,6 +53,7 @@ func main() {
 		emotionClient = emotion.NewMockClient()
 		vectorStoreClient = vectorstore.NewMockClient()
 		llmProvider = llm.NewMockProvider()
+		activeLLMProvider = "mock"
 		classifierClient = classifier.NewMockClient()
 	} else {
 		slog.Info("starting with real connectors")
@@ -98,7 +100,25 @@ func main() {
 		vectorReal.SetMetricsReporter(metricsReporter)
 		vectorStoreClient = vectorReal
 
-		llmProvider = llm.NewMockProvider()
+		switch cfg.LLMProvider {
+		case "mock":
+			llmProvider = llm.NewMockProvider()
+			activeLLMProvider = "mock"
+		case "openai-compatible":
+			llmReal, err := llm.NewOpenAICompatibleProvider(llm.OpenAICompatibleConfig{
+				BaseURL: cfg.LLMBaseURL,
+				APIKey:  cfg.LLMAPIKey,
+			})
+			if err != nil {
+				slog.Error("init llm provider", "error", err)
+				os.Exit(1)
+			}
+			llmProvider = llmReal
+			activeLLMProvider = "openai-compatible"
+		default:
+			slog.Error("unsupported llm provider", "provider", cfg.LLMProvider)
+			os.Exit(1)
+		}
 		classifierReal := classifier.NewClient(cfg.PythonMLURL)
 		classifierReal.SetMetricsReporter(metricsReporter)
 		classifierClient = classifierReal
@@ -118,6 +138,16 @@ func main() {
 		classifierClient,
 	)
 	orchestrator.SetMetricsReporter(metricsReporter)
+	orchestrator.SetGenerateOpts(connector.GenerateOpts{
+		Model:           cfg.LLMModel,
+		SystemPrompt:    cfg.LLMSystemPrompt,
+		MaxTokens:       cfg.LLMMaxTokens,
+		Temperature:     cfg.LLMTemperature,
+		TopP:            cfg.LLMTopP,
+		TopK:            cfg.LLMTopK,
+		PresencePenalty: cfg.LLMPresencePenalty,
+		EnableThinking:  cfg.LLMEnableThinking,
+	})
 	handlers := api.NewHandlers(
 		orchestrator,
 		dbClient,
@@ -131,7 +161,7 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	slog.Info("orchestrator starting", "port", cfg.HTTPPort)
+	slog.Info("orchestrator starting", "port", cfg.HTTPPort, "llm_provider", activeLLMProvider, "llm_model", cfg.LLMModel)
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		slog.Error("server failed", "error", err)
 		os.Exit(1)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/swarm-emotions/orchestrator/internal/connector"
 	"github.com/swarm-emotions/orchestrator/internal/model"
 )
 
@@ -19,9 +18,5 @@ func (o *Orchestrator) stepGenerate(
 	defer cancel()
 
 	prompt := buildPrompt(input, ranked, fsmResult, cognitive)
-	return o.llm.Generate(stepCtx, prompt, connector.GenerateOpts{
-		Model:       "mock-llm",
-		MaxTokens:   256,
-		Temperature: 0.2,
-	})
+	return o.llm.Generate(stepCtx, prompt, o.generateOpts)
 }

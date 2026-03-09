@@ -99,8 +99,27 @@ func main() {
 				SampleError:  loadSampleError(&firstError),
 			})
 		case <-ticker.C:
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				wg.Wait()
+				reportAndExit(summary{
+					BaseURL:      strings.TrimRight(baseURL, "/"),
+					DurationSec:  duration.Seconds(),
+					RPS:          rps,
+					Agents:       agents,
+					MaxInflight:  maxInflight,
+					Total:        totalCount.Load(),
+					Success:      successCount.Load(),
+					Failure:      failureCount.Load(),
+					AvgLatencyMs: averageLatencyMs(latencies),
+					P95LatencyMs: percentileLatencyMs(latencies, 0.95),
+					MaxLatencyMs: maxLatencyMs(latencies),
+					SampleError:  loadSampleError(&firstError),
+				})
+			}
+
 			seq := sequence.Add(1)
-			sem <- struct{}{}
 			wg.Add(1)
 
 			go func(requestID uint64) {

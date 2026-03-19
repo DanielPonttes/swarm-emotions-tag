@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -157,6 +158,55 @@ func TestPostProcessRunsInBackground(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatalf("background postprocess did not run")
+	}
+}
+
+func TestExecuteStreamEmitsMetadataAndChunks(t *testing.T) {
+	cacheClient := cache.NewMockClient()
+	dbClient := db.NewMockClient()
+	if err := dbClient.SaveAgentConfig(context.Background(), model.DefaultAgentConfig("agent-stream")); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	orchestrator := New(
+		emotion.NewMockClient(),
+		vectorstore.NewMockClient(),
+		cacheClient,
+		dbClient,
+		llm.NewMockProvider(),
+		classifier.NewMockClient(),
+	)
+	orchestrator.SetBackgroundRunner(func(fn func()) { fn() })
+
+	var metadata StreamMetadata
+	var chunks []string
+	result, err := orchestrator.ExecuteStream(context.Background(), Input{
+		AgentID: "agent-stream",
+		Text:    "urgent git push issue",
+	}, StreamCallbacks{
+		OnMetadata: func(meta StreamMetadata) error {
+			metadata = meta
+			return nil
+		},
+		OnChunk: func(text string) error {
+			chunks = append(chunks, text)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("execute stream: %v", err)
+	}
+	if metadata.NewFsmState.StateName == "" {
+		t.Fatalf("expected metadata to be populated")
+	}
+	if len(chunks) == 0 {
+		t.Fatalf("expected stream chunks")
+	}
+	if result.LLMResponse == "" {
+		t.Fatalf("expected final llm response")
+	}
+	if got := strings.Join(chunks, ""); got != result.LLMResponse {
+		t.Fatalf("expected chunked response to match final response\nchunks=%q\nresult=%q", got, result.LLMResponse)
 	}
 }
 

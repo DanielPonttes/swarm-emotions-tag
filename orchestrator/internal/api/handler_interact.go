@@ -74,12 +74,12 @@ func (h *Handlers) InteractStream(w http.ResponseWriter, r *http.Request) {
 	callbacks := pipeline.StreamCallbacks{
 		OnMetadata: func(meta pipeline.StreamMetadata) error {
 			return writeSSE(w, flusher, "metadata", map[string]any{
-				"fsm_state":  meta.NewFsmState.StateName,
-				"emotion":    meta.NewEmotion,
-				"intensity":  meta.NewIntensity,
-				"trace_id":   traceID,
-				"agent_id":   req.AgentID,
-				"streaming":  true,
+				"fsm_state": meta.NewFsmState.StateName,
+				"emotion":   meta.NewEmotion,
+				"intensity": meta.NewIntensity,
+				"trace_id":  traceID,
+				"agent_id":  req.AgentID,
+				"streaming": true,
 			})
 		},
 		OnChunk: func(text string) error {

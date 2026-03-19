@@ -219,11 +219,11 @@ func (p *OpenAICompatibleProvider) GenerateStream(ctx context.Context, prompt st
 				continue
 			}
 
-			text := strings.TrimSpace(extractMessageContent(decoded.Choices[0].Delta.Content))
-			if text == "" {
-				text = strings.TrimSpace(decoded.Choices[0].Delta.ReasoningContent)
+			text := extractMessageContent(decoded.Choices[0].Delta.Content)
+			if strings.TrimSpace(text) == "" {
+				text = decoded.Choices[0].Delta.ReasoningContent
 			}
-			if text != "" {
+			if strings.TrimSpace(text) != "" {
 				ch <- connector.StreamChunk{Text: text}
 			}
 			if decoded.Choices[0].FinishReason != "" {

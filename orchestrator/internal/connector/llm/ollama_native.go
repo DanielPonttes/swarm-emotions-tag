@@ -233,11 +233,11 @@ func (p *OllamaNativeProvider) GenerateStream(ctx context.Context, prompt string
 				return
 			}
 
-			text := strings.TrimSpace(decoded.Message.Content)
-			if text == "" {
-				text = strings.TrimSpace(decoded.Response)
+			text := decoded.Message.Content
+			if strings.TrimSpace(text) == "" {
+				text = decoded.Response
 			}
-			if text != "" {
+			if strings.TrimSpace(text) != "" {
 				ch <- connector.StreamChunk{Text: text}
 			}
 			if decoded.Done {

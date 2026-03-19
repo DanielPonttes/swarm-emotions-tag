@@ -65,14 +65,20 @@ func (o *Orchestrator) stepPostProcess(
 	})
 
 	summary := buildWorkingSummary(input.Text, llmResponse, ranked)
-	if len(ranked) > 0 {
-		_ = o.cache.PushWorkingMemory(ctx, input.AgentID, model.WorkingMemoryEntry{
-			MemoryID:    ranked[0].MemoryID,
-			Content:     ranked[0].Content,
-			Score:       ranked[0].FinalScore,
-			CreatedAtMs: now,
-		})
-	}
+	_ = o.cache.PushWorkingMemory(ctx, input.AgentID, model.WorkingMemoryEntry{
+		MemoryID:    "turn-user",
+		Role:        "user",
+		Content:     input.Text,
+		Score:       fsmResult.NewIntensity,
+		CreatedAtMs: now,
+	})
+	_ = o.cache.PushWorkingMemory(ctx, input.AgentID, model.WorkingMemoryEntry{
+		MemoryID:    "turn-assistant",
+		Role:        "assistant",
+		Content:     llmResponse,
+		Score:       fsmResult.NewIntensity,
+		CreatedAtMs: now + 1,
+	})
 
 	nextContext := model.DefaultCognitiveContext(input.AgentID)
 	if cognitive != nil {

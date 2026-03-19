@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/swarm-emotions/orchestrator/internal/model"
@@ -41,7 +42,7 @@ func buildPromptPackage(
 	directive := FindEmotionDirective(fsmResult.NewEmotion)
 	budget := calculatePromptBudget(maxTokens, fsmResult.NewIntensity)
 	semanticMemories, resonantMemories := splitRankedMemories(ranked, fsmResult.NewIntensity)
-	recentWorking := trimWorkingMemory(workingMemory, workingMemoryBudget(fsmResult.NewIntensity))
+	recentWorking := normalizeWorkingMemoryForPrompt(workingMemory, workingMemoryBudget(fsmResult.NewIntensity))
 
 	systemPrompt := buildSystemPrompt(baseSystemPrompt, fsmResult, cognitive, directive, budget)
 	userPrompt := buildUserPrompt(input, cognitive, semanticMemories, resonantMemories, recentWorking, budget)
@@ -192,6 +193,11 @@ func buildUserPrompt(
 	} else {
 		perItem := maxInt(workingChars/maxInt(len(workingMemory), 1), 48)
 		for _, entry := range workingMemory {
+			role := normalizeWorkingMemoryRole(entry.Role)
+			if role != "" {
+				builder.WriteString(fmt.Sprintf("%s: %s\n", role, shortenText(entry.Content, perItem)))
+				continue
+			}
 			builder.WriteString(fmt.Sprintf("- %s\n", shortenText(entry.Content, perItem)))
 		}
 	}
@@ -248,18 +254,35 @@ func workingMemoryBudget(intensity float32) int {
 	return 3
 }
 
-func trimWorkingMemory(entries []model.WorkingMemoryEntry, budget int) []model.WorkingMemoryEntry {
+func normalizeWorkingMemoryForPrompt(entries []model.WorkingMemoryEntry, budget int) []model.WorkingMemoryEntry {
 	if budget <= 0 || len(entries) == 0 {
 		return nil
 	}
-	if len(entries) <= budget {
-		out := make([]model.WorkingMemoryEntry, len(entries))
-		copy(out, entries)
-		return out
+
+	ordered := make([]model.WorkingMemoryEntry, len(entries))
+	copy(ordered, entries)
+	sort.Slice(ordered, func(i, j int) bool {
+		return ordered[i].CreatedAtMs > ordered[j].CreatedAtMs
+	})
+	if len(ordered) > budget {
+		ordered = ordered[:budget]
 	}
-	out := make([]model.WorkingMemoryEntry, budget)
-	copy(out, entries[len(entries)-budget:])
+	out := make([]model.WorkingMemoryEntry, len(ordered))
+	for i := range ordered {
+		out[len(ordered)-1-i] = ordered[i]
+	}
 	return out
+}
+
+func normalizeWorkingMemoryRole(role string) string {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "user":
+		return "User"
+	case "assistant", "agent":
+		return "Assistant"
+	default:
+		return ""
+	}
 }
 
 func joinOrFallback(values []string, fallback string) string {

@@ -31,6 +31,7 @@ type RankedMemory struct {
 
 type WorkingMemoryEntry struct {
 	MemoryID    string  `json:"memory_id"`
+	Role        string  `json:"role,omitempty"`
 	Content     string  `json:"content"`
 	Score       float32 `json:"score"`
 	CreatedAtMs int64   `json:"created_at_ms"`

@@ -76,12 +76,14 @@ func TestClientIntegration_StateLockAndWorkingMemory(t *testing.T) {
 
 	entryOld := model.WorkingMemoryEntry{
 		MemoryID:    "mem-old",
+		Role:        "user",
 		Content:     "older memory",
 		Score:       0.3,
 		CreatedAtMs: time.Now().Add(-2 * time.Minute).UnixMilli(),
 	}
 	entryNew := model.WorkingMemoryEntry{
 		MemoryID:    "mem-new",
+		Role:        "assistant",
 		Content:     "newer memory",
 		Score:       0.9,
 		CreatedAtMs: time.Now().UnixMilli(),
@@ -103,5 +105,8 @@ func TestClientIntegration_StateLockAndWorkingMemory(t *testing.T) {
 	}
 	if entries[0].MemoryID != "mem-new" {
 		t.Fatalf("expected newest memory first, got %q", entries[0].MemoryID)
+	}
+	if entries[0].Role != "assistant" || entries[1].Role != "user" {
+		t.Fatalf("expected roles to round-trip, got %#v", entries)
 	}
 }

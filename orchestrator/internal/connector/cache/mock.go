@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -56,6 +57,9 @@ func (c *MockClient) GetWorkingMemory(_ context.Context, agentID string) ([]mode
 	entries := c.workingMemory[agentID]
 	out := make([]model.WorkingMemoryEntry, len(entries))
 	copy(out, entries)
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAtMs > out[j].CreatedAtMs
+	})
 	return out, nil
 }
 

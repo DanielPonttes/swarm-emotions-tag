@@ -249,6 +249,44 @@ func TestStepPostProcessRecordsToneCompliance(t *testing.T) {
 	}
 }
 
+func TestPostProcessStoresConversationTurnsInWorkingMemory(t *testing.T) {
+	cacheClient := cache.NewMockClient()
+	orchestrator := New(
+		emotion.NewMockClient(),
+		vectorstore.NewMockClient(),
+		cacheClient,
+		db.NewMockClient(),
+		llm.NewMockProvider(),
+		classifier.NewMockClient(),
+	)
+
+	orchestrator.stepPostProcess(
+		context.Background(),
+		Input{AgentID: "agent-memory", Text: "Como resolvo o push?"},
+		"Use git pull --rebase e depois git push.",
+		&FSMResult{
+			NewEmotion:   model.EmotionVector{Components: []float32{0.2, 0.3, 0.1}},
+			NewFsmState:  model.FsmState{StateName: "curious", MacroState: "positive"},
+			NewIntensity: 0.4,
+			Stimulus:     "novelty",
+		},
+		nil,
+		model.DefaultCognitiveContext("agent-memory"),
+		FindEmotionDirective(model.EmotionVector{Components: []float32{0.2, 0.3, 0.1}}),
+	)
+
+	entries, err := cacheClient.GetWorkingMemory(context.Background(), "agent-memory")
+	if err != nil {
+		t.Fatalf("get working memory: %v", err)
+	}
+	if len(entries) < 2 {
+		t.Fatalf("expected at least 2 working-memory entries, got %d", len(entries))
+	}
+	if entries[0].Role != "assistant" || entries[1].Role != "user" {
+		t.Fatalf("expected newest-first storage with assistant then user, got %#v", entries[:2])
+	}
+}
+
 type slowVectorStore struct {
 	delay time.Duration
 }

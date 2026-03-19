@@ -68,7 +68,10 @@ func TestBuildPromptIncludesStructuredCognitiveSections(t *testing.T) {
 			NewIntensity: 0.92,
 		},
 		prepareCognitiveContext(model.DefaultCognitiveContext("agent-9"), "push urgente", model.EmotionVector{Components: []float32{-0.6, 0.9, -0.3}}),
-		[]model.WorkingMemoryEntry{{Content: "Última tentativa de deploy falhou por rejeição no remote."}},
+		[]model.WorkingMemoryEntry{
+			{Role: "assistant", Content: "A tentativa anterior falhou por rejeição no remote.", CreatedAtMs: 2},
+			{Role: "user", Content: "Preciso corrigir o push agora.", CreatedAtMs: 1},
+		},
 		256,
 		"You are the base system prompt.",
 	)
@@ -83,7 +86,7 @@ func TestBuildPromptIncludesStructuredCognitiveSections(t *testing.T) {
 			t.Fatalf("expected system prompt to contain %q\n%s", expected, promptPackage.SystemPrompt)
 		}
 	}
-	for _, expected := range []string{"## Emotional Resonance", "## Working Memory", "## User Message"} {
+	for _, expected := range []string{"## Emotional Resonance", "## Working Memory", "## User Message", "User:", "Assistant:"} {
 		if !strings.Contains(promptPackage.UserPrompt, expected) {
 			t.Fatalf("expected user prompt to contain %q\n%s", expected, promptPackage.UserPrompt)
 		}
@@ -132,5 +135,21 @@ func TestToneComplianceScoreHighWhenAlignedAndLowWhenMisaligned(t *testing.T) {
 	}
 	if misaligned > 0.4 {
 		t.Fatalf("expected low misaligned score, got %f", misaligned)
+	}
+}
+
+func TestNormalizeWorkingMemoryForPromptUsesRecentEntriesInChronologicalOrder(t *testing.T) {
+	entries := []model.WorkingMemoryEntry{
+		{Role: "assistant", Content: "third", CreatedAtMs: 30},
+		{Role: "user", Content: "second", CreatedAtMs: 20},
+		{Role: "assistant", Content: "first", CreatedAtMs: 10},
+	}
+
+	got := normalizeWorkingMemoryForPrompt(entries, 2)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(got))
+	}
+	if got[0].Content != "second" || got[1].Content != "third" {
+		t.Fatalf("expected chronological recent entries, got %#v", got)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/swarm-emotions/orchestrator/internal/connector/cache"
@@ -115,5 +116,33 @@ func TestInteractAndHistoryRoutes(t *testing.T) {
 	router.ServeHTTP(historyRec, historyReq)
 	if historyRec.Code != http.StatusOK {
 		t.Fatalf("history expected 200, got %d", historyRec.Code)
+	}
+}
+
+func TestInteractStreamRoute(t *testing.T) {
+	router := newTestRouter()
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/interact/stream",
+		bytes.NewBufferString(`{"agent_id":"agent-stream","text":"need help with git push"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("interact stream expected 200, got %d", rec.Code)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "text/event-stream") {
+		t.Fatalf("expected event-stream content type, got %q", contentType)
+	}
+
+	body := rec.Body.String()
+	for _, expected := range []string{"event: metadata", "event: chunk", "event: done"} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("expected stream body to contain %q\n%s", expected, body)
+		}
 	}
 }

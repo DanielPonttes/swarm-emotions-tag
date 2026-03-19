@@ -105,6 +105,12 @@ type GenerateOpts struct {
 	EnableThinking  bool
 }
 
+type StreamChunk struct {
+	Text  string
+	Done  bool
+	Error error
+}
+
 type EmotionClassification struct {
 	Vector     model.EmotionVector
 	Label      string
@@ -152,6 +158,11 @@ type DBClient interface {
 type LLMProvider interface {
 	Ready(ctx context.Context) error
 	Generate(ctx context.Context, prompt string, opts GenerateOpts) (string, error)
+}
+
+type StreamingLLMProvider interface {
+	LLMProvider
+	GenerateStream(ctx context.Context, prompt string, opts GenerateOpts) (<-chan StreamChunk, error)
 }
 
 type ClassifierClient interface {

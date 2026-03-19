@@ -1,14 +1,18 @@
 package llm
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/swarm-emotions/orchestrator/internal/connector"
 )
 
 type OllamaNativeConfig struct {
@@ -42,6 +46,8 @@ type ollamaChatResponse struct {
 		Content string `json:"content"`
 	} `json:"message"`
 	Response string `json:"response"`
+	Done     bool   `json:"done"`
+	Error    string `json:"error"`
 }
 
 func NewOllamaNativeProvider(cfg OllamaNativeConfig) (*OllamaNativeProvider, error) {
@@ -149,6 +155,104 @@ func (p *OllamaNativeProvider) Generate(ctx context.Context, prompt string, opts
 	}
 
 	return "", fmt.Errorf("ollama response content is empty")
+}
+
+func (p *OllamaNativeProvider) GenerateStream(ctx context.Context, prompt string, opts GenerateOpts) (<-chan connector.StreamChunk, error) {
+	model := normalizeOllamaModelName(opts.Model)
+	if model == "" {
+		return nil, fmt.Errorf("llm model is required")
+	}
+
+	messages := make([]chatMessage, 0, 2)
+	if systemPrompt := strings.TrimSpace(opts.SystemPrompt); systemPrompt != "" {
+		messages = append(messages, chatMessage{
+			Role:    "system",
+			Content: systemPrompt,
+		})
+	}
+	messages = append(messages, chatMessage{
+		Role:    "user",
+		Content: prompt,
+	})
+
+	payload := ollamaChatRequest{
+		Model:    model,
+		Messages: messages,
+		Stream:   true,
+		Think:    opts.EnableThinking,
+		Options: ollamaChatOpts{
+			Temperature:     opts.Temperature,
+			TopP:            opts.TopP,
+			TopK:            opts.TopK,
+			PresencePenalty: opts.PresencePenalty,
+			NumPredict:      opts.MaxTokens,
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/api/chat", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 400 {
+		defer resp.Body.Close()
+		return nil, fmt.Errorf("ollama generate failed: %s", readBody(resp.Body))
+	}
+
+	ch := make(chan connector.StreamChunk, 32)
+	go func() {
+		defer close(ch)
+		defer resp.Body.Close()
+
+		scanner := bufio.NewScanner(resp.Body)
+		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" {
+				continue
+			}
+
+			var decoded ollamaChatResponse
+			if err := json.Unmarshal([]byte(line), &decoded); err != nil {
+				ch <- connector.StreamChunk{Error: fmt.Errorf("decode ollama stream chunk: %w", err)}
+				return
+			}
+			if decoded.Error != "" {
+				ch <- connector.StreamChunk{Error: fmt.Errorf("ollama stream failed: %s", decoded.Error)}
+				return
+			}
+
+			text := strings.TrimSpace(decoded.Message.Content)
+			if text == "" {
+				text = strings.TrimSpace(decoded.Response)
+			}
+			if text != "" {
+				ch <- connector.StreamChunk{Text: text}
+			}
+			if decoded.Done {
+				ch <- connector.StreamChunk{Done: true}
+				return
+			}
+		}
+		if err := scanner.Err(); err != nil && !errors.Is(err, context.Canceled) {
+			ch <- connector.StreamChunk{Error: fmt.Errorf("read ollama stream: %w", err)}
+			return
+		}
+		ch <- connector.StreamChunk{Done: true}
+	}()
+
+	return ch, nil
 }
 
 func readBody(body io.Reader) string {

@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -129,5 +130,54 @@ func TestOpenAICompatibleProviderGenerateReturnsServerError(t *testing.T) {
 	})
 	if err == nil || err.Error() != "llm generate failed: model unavailable" {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestOpenAICompatibleProviderGenerateStream(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if req["stream"] != true {
+			t.Fatalf("expected stream=true, got %#v", req["stream"])
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"qwen \"}}]}\n\n")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"stream\"},\"finish_reason\":\"stop\"}]}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	provider, err := NewOpenAICompatibleProvider(OpenAICompatibleConfig{
+		BaseURL: server.URL + "/v1",
+		APIKey:  "test-key",
+	})
+	if err != nil {
+		t.Fatalf("new provider: %v", err)
+	}
+
+	ch, err := provider.GenerateStream(context.Background(), "hello", GenerateOpts{
+		Model:        "Qwen/Qwen3.5-27B",
+		SystemPrompt: "be concise",
+		MaxTokens:    64,
+	})
+	if err != nil {
+		t.Fatalf("generate stream: %v", err)
+	}
+
+	var got string
+	for chunk := range ch {
+		if chunk.Error != nil {
+			t.Fatalf("stream chunk error: %v", chunk.Error)
+		}
+		if chunk.Done {
+			break
+		}
+		got += chunk.Text
+	}
+	if got != "qwen stream" {
+		t.Fatalf("unexpected stream result: %q", got)
 	}
 }

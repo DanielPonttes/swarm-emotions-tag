@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
@@ -23,4 +24,16 @@ func respondError(w http.ResponseWriter, r *http.Request, status int, message st
 		Error:     message,
 		RequestID: chimiddleware.GetReqID(r.Context()),
 	})
+}
+
+func writeSSE(w http.ResponseWriter, f http.Flusher, event string, payload any) error {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, data); err != nil {
+		return err
+	}
+	f.Flush()
+	return nil
 }

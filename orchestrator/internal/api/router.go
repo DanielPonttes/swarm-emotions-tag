@@ -37,6 +37,7 @@ func NewRouter(h *Handlers) http.Handler {
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Post("/interact", h.Interact)
+		r.Post("/interact/stream", h.InteractStream)
 		r.Route("/agents", func(r chi.Router) {
 			r.Post("/", h.CreateAgent)
 			r.Get("/", h.ListAgents)

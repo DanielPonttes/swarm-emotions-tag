@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -82,5 +83,54 @@ func TestOllamaNativeProviderStripsV1AndGenerates(t *testing.T) {
 func TestNormalizeOllamaModelNameMapsQwenAlias(t *testing.T) {
 	if got := normalizeOllamaModelName("Qwen/Qwen3.5-27B"); got != "qwen3.5:27b" {
 		t.Fatalf("unexpected normalized model: %s", got)
+	}
+}
+
+func TestOllamaNativeProviderGenerateStream(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/chat" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+
+		var payload ollamaChatRequest
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if !payload.Stream {
+			t.Fatalf("expected stream=true")
+		}
+
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		_, _ = io.WriteString(w, "{\"message\":{\"content\":\"ola \"},\"done\":false}\n")
+		_, _ = io.WriteString(w, "{\"message\":{\"content\":\"mundo\"},\"done\":true}\n")
+	}))
+	defer server.Close()
+
+	provider, err := NewOllamaNativeProvider(OllamaNativeConfig{BaseURL: server.URL})
+	if err != nil {
+		t.Fatalf("new provider: %v", err)
+	}
+
+	ch, err := provider.GenerateStream(context.Background(), "hello", GenerateOpts{
+		Model:        "Qwen/Qwen3.5-27B",
+		SystemPrompt: "Reply briefly.",
+		MaxTokens:    64,
+	})
+	if err != nil {
+		t.Fatalf("generate stream: %v", err)
+	}
+
+	var got string
+	for chunk := range ch {
+		if chunk.Error != nil {
+			t.Fatalf("stream chunk error: %v", chunk.Error)
+		}
+		if chunk.Done {
+			break
+		}
+		got += chunk.Text
+	}
+	if got != "ola mundo" {
+		t.Fatalf("unexpected stream result: %q", got)
 	}
 }

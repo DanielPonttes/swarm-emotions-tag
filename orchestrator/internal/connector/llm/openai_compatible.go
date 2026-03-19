@@ -1,14 +1,18 @@
 package llm
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/swarm-emotions/orchestrator/internal/connector"
 )
 
 type OpenAICompatibleConfig struct {
@@ -50,6 +54,16 @@ type chatCompletionResponse struct {
 			Content          json.RawMessage `json:"content"`
 			ReasoningContent string          `json:"reasoning_content"`
 		} `json:"message"`
+	} `json:"choices"`
+}
+
+type chatCompletionStreamResponse struct {
+	Choices []struct {
+		Delta struct {
+			Content          json.RawMessage `json:"content"`
+			ReasoningContent string          `json:"reasoning_content"`
+		} `json:"delta"`
+		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 }
 
@@ -97,35 +111,9 @@ func (p *OpenAICompatibleProvider) Ready(ctx context.Context) error {
 }
 
 func (p *OpenAICompatibleProvider) Generate(ctx context.Context, prompt string, opts GenerateOpts) (string, error) {
-	model := strings.TrimSpace(opts.Model)
-	if model == "" {
-		return "", fmt.Errorf("llm model is required")
-	}
-
-	messages := make([]chatMessage, 0, 2)
-	if systemPrompt := strings.TrimSpace(opts.SystemPrompt); systemPrompt != "" {
-		messages = append(messages, chatMessage{
-			Role:    "system",
-			Content: systemPrompt,
-		})
-	}
-	messages = append(messages, chatMessage{
-		Role:    "user",
-		Content: prompt,
-	})
-
-	payload := chatCompletionRequest{
-		Model:           model,
-		Messages:        messages,
-		MaxTokens:       opts.MaxTokens,
-		Temperature:     opts.Temperature,
-		TopP:            opts.TopP,
-		TopK:            opts.TopK,
-		PresencePenalty: opts.PresencePenalty,
-		Stream:          false,
-		ChatTemplate: chatTemplateKwargs{
-			EnableThinking: opts.EnableThinking,
-		},
+	payload, err := buildChatCompletionRequest(prompt, opts, false)
+	if err != nil {
+		return "", err
 	}
 
 	body, err := json.Marshal(payload)
@@ -169,6 +157,88 @@ func (p *OpenAICompatibleProvider) Generate(ctx context.Context, prompt string, 
 	}
 
 	return "", fmt.Errorf("llm response content is empty")
+}
+
+func (p *OpenAICompatibleProvider) GenerateStream(ctx context.Context, prompt string, opts GenerateOpts) (<-chan connector.StreamChunk, error) {
+	payload, err := buildChatCompletionRequest(prompt, opts, true)
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	p.applyHeaders(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 400 {
+		defer resp.Body.Close()
+		return nil, fmt.Errorf("llm generate failed: %s", p.readErrorBody(resp.Body))
+	}
+
+	ch := make(chan connector.StreamChunk, 32)
+	go func() {
+		defer close(ch)
+		defer resp.Body.Close()
+
+		scanner := bufio.NewScanner(resp.Body)
+		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" {
+				continue
+			}
+			if strings.HasPrefix(line, "data:") {
+				line = strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+			}
+			if line == "" {
+				continue
+			}
+			if line == "[DONE]" {
+				ch <- connector.StreamChunk{Done: true}
+				return
+			}
+
+			var decoded chatCompletionStreamResponse
+			if err := json.Unmarshal([]byte(line), &decoded); err != nil {
+				ch <- connector.StreamChunk{Error: fmt.Errorf("decode llm stream chunk: %w", err)}
+				return
+			}
+			if len(decoded.Choices) == 0 {
+				continue
+			}
+
+			text := strings.TrimSpace(extractMessageContent(decoded.Choices[0].Delta.Content))
+			if text == "" {
+				text = strings.TrimSpace(decoded.Choices[0].Delta.ReasoningContent)
+			}
+			if text != "" {
+				ch <- connector.StreamChunk{Text: text}
+			}
+			if decoded.Choices[0].FinishReason != "" {
+				ch <- connector.StreamChunk{Done: true}
+				return
+			}
+		}
+		if err := scanner.Err(); err != nil && !errors.Is(err, context.Canceled) {
+			ch <- connector.StreamChunk{Error: fmt.Errorf("read llm stream: %w", err)}
+			return
+		}
+		ch <- connector.StreamChunk{Done: true}
+	}()
+
+	return ch, nil
 }
 
 func (p *OpenAICompatibleProvider) applyHeaders(req *http.Request) {
@@ -221,4 +291,37 @@ func extractMessageContent(raw json.RawMessage) string {
 	}
 
 	return ""
+}
+
+func buildChatCompletionRequest(prompt string, opts GenerateOpts, stream bool) (chatCompletionRequest, error) {
+	model := strings.TrimSpace(opts.Model)
+	if model == "" {
+		return chatCompletionRequest{}, fmt.Errorf("llm model is required")
+	}
+
+	messages := make([]chatMessage, 0, 2)
+	if systemPrompt := strings.TrimSpace(opts.SystemPrompt); systemPrompt != "" {
+		messages = append(messages, chatMessage{
+			Role:    "system",
+			Content: systemPrompt,
+		})
+	}
+	messages = append(messages, chatMessage{
+		Role:    "user",
+		Content: prompt,
+	})
+
+	return chatCompletionRequest{
+		Model:           model,
+		Messages:        messages,
+		MaxTokens:       opts.MaxTokens,
+		Temperature:     opts.Temperature,
+		TopP:            opts.TopP,
+		TopK:            opts.TopK,
+		PresencePenalty: opts.PresencePenalty,
+		Stream:          stream,
+		ChatTemplate: chatTemplateKwargs{
+			EnableThinking: opts.EnableThinking,
+		},
+	}, nil
 }

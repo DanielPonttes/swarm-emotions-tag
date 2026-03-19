@@ -38,7 +38,7 @@ func Load() Config {
 		QdrantAddr:                getEnv("QDRANT_ADDR", "localhost:6333"),
 		QdrantCollection:          getEnv("QDRANT_COLLECTION", "memories"),
 		RedisAddr:                 getEnv("REDIS_ADDR", "localhost:6379"),
-		PostgresDSN:               getEnv("POSTGRES_DSN", "postgres://emotionrag:dev_password_change_me@localhost:5432/emotionrag?sslmode=disable"),
+		PostgresDSN:               getEnv("POSTGRES_DSN", "postgres://emotionrag:dev_password_change_me@localhost:5433/emotionrag?sslmode=disable"),
 		PythonMLURL:               getEnv("PYTHON_ML_URL", "http://localhost:8090"),
 		ClassifierCacheEnabled:    getEnvBool("CLASSIFIER_CACHE_ENABLED", true),
 		ClassifierCacheTTLSeconds: getEnvInt("CLASSIFIER_CACHE_TTL_SEC", 21600),

@@ -16,7 +16,7 @@ import (
 func TestClientIntegration_CRUDAndHistory(t *testing.T) {
 	dsn := testutil.EnvOrDefault(
 		"POSTGRES_DSN",
-		"postgres://emotionrag:dev_password_change_me@127.0.0.1:5432/emotionrag?sslmode=disable",
+		"postgres://emotionrag:dev_password_change_me@127.0.0.1:5433/emotionrag?sslmode=disable",
 	)
 	parsed, err := url.Parse(dsn)
 	if err != nil {

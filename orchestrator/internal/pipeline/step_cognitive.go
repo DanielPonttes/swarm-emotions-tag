@@ -30,6 +30,10 @@ func prepareCognitiveContext(
 func inferConversationPhase(current, input string, emotion model.EmotionVector) string {
 	lower := strings.ToLower(input)
 	switch {
+	case containsAny(lower, "error", "bug", "broken", "help", "problema", "erro", "falhou", "issue", "deadline", "urgent", "urgente"):
+		return "problem_diagnosis"
+	case containsAny(lower, "resolved", "fix", "fixed", "works", "working", "funcionou", "resolveu"):
+		return "resolution"
 	case current == "" || current == "idle":
 		if containsAny(lower, "bye", "goodbye", "tchau", "obrigado", "thanks") {
 			return "farewell"
@@ -37,10 +41,6 @@ func inferConversationPhase(current, input string, emotion model.EmotionVector) 
 		return "greeting"
 	case containsAny(lower, "bye", "goodbye", "tchau", "obrigado", "thanks"):
 		return "farewell"
-	case containsAny(lower, "error", "bug", "broken", "help", "problema", "erro", "falhou", "issue", "deadline", "urgent", "urgente"):
-		return "problem_diagnosis"
-	case containsAny(lower, "resolved", "fix", "fixed", "works", "working", "funcionou", "resolveu"):
-		return "resolution"
 	case emotion.Intensity() < 0.45 && current == "problem_diagnosis":
 		return "resolution"
 	default:

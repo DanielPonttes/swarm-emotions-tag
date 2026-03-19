@@ -63,7 +63,7 @@ func TestOllamaNativeProviderStripsV1AndGenerates(t *testing.T) {
 	}
 
 	response, err := provider.Generate(context.Background(), "hello", GenerateOpts{
-		Model:          "qwen3.5:27b",
+		Model:          "Qwen/Qwen3.5-27B",
 		SystemPrompt:   "Reply briefly.",
 		MaxTokens:      64,
 		Temperature:    0.2,
@@ -76,5 +76,11 @@ func TestOllamaNativeProviderStripsV1AndGenerates(t *testing.T) {
 	}
 	if response != "Olá!" {
 		t.Fatalf("unexpected response: %q", response)
+	}
+}
+
+func TestNormalizeOllamaModelNameMapsQwenAlias(t *testing.T) {
+	if got := normalizeOllamaModelName("Qwen/Qwen3.5-27B"); got != "qwen3.5:27b" {
+		t.Fatalf("unexpected normalized model: %s", got)
 	}
 }

@@ -81,7 +81,7 @@ func (p *OllamaNativeProvider) Ready(ctx context.Context) error {
 }
 
 func (p *OllamaNativeProvider) Generate(ctx context.Context, prompt string, opts GenerateOpts) (string, error) {
-	model := strings.TrimSpace(opts.Model)
+	model := normalizeOllamaModelName(opts.Model)
 	if model == "" {
 		return "", fmt.Errorf("llm model is required")
 	}
@@ -154,4 +154,19 @@ func (p *OllamaNativeProvider) Generate(ctx context.Context, prompt string, opts
 func readBody(body io.Reader) string {
 	payload, _ := io.ReadAll(io.LimitReader(body, 2048))
 	return strings.TrimSpace(string(payload))
+}
+
+func normalizeOllamaModelName(model string) string {
+	trimmed := strings.TrimSpace(model)
+	lower := strings.ToLower(trimmed)
+
+	switch lower {
+	case "qwen/qwen3.5-27b", "qwen3.5-27b", "qwen 3.5 27b", "qwen3.5 27b":
+		return "qwen3.5:27b"
+	}
+
+	if strings.HasPrefix(lower, "qwen/") && strings.Contains(lower, "3.5") && strings.Contains(lower, "27b") {
+		return "qwen3.5:27b"
+	}
+	return trimmed
 }

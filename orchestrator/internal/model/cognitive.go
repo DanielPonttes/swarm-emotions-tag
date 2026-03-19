@@ -24,15 +24,15 @@ type CognitiveNorms struct {
 }
 
 type CognitiveContext struct {
-	AgentID           string            `json:"agent_id"`
-	Goals             []string          `json:"goals,omitempty"`
-	ActiveGoals       []CognitiveGoal   `json:"active_goals,omitempty"`
-	Constraints       []string          `json:"constraints,omitempty"`
-	Norms             CognitiveNorms    `json:"norms,omitempty"`
-	Beliefs           CognitiveBeliefs  `json:"beliefs,omitempty"`
-	ConversationPhase string            `json:"conversation_phase,omitempty"`
-	WorkingSummary    string            `json:"working_summary,omitempty"`
-	UpdatedAtMs       int64             `json:"updated_at_ms"`
+	AgentID           string           `json:"agent_id"`
+	Goals             []string         `json:"goals,omitempty"`
+	ActiveGoals       []CognitiveGoal  `json:"active_goals,omitempty"`
+	Constraints       []string         `json:"constraints,omitempty"`
+	Norms             CognitiveNorms   `json:"norms,omitempty"`
+	Beliefs           CognitiveBeliefs `json:"beliefs,omitempty"`
+	ConversationPhase string           `json:"conversation_phase,omitempty"`
+	WorkingSummary    string           `json:"working_summary,omitempty"`
+	UpdatedAtMs       int64            `json:"updated_at_ms"`
 }
 
 func DefaultCognitiveContext(agentID string) *CognitiveContext {

@@ -333,15 +333,15 @@ WHERE agent_id = $1
 		}
 
 		cognitive := &model.CognitiveContext{
-			AgentID:        agentID,
-			Goals:          legacyGoals,
-			ActiveGoals:    activeGoals,
-			Constraints:    norms.Constraints,
-			Norms:          norms,
-			Beliefs:        beliefs,
+			AgentID:           agentID,
+			Goals:             legacyGoals,
+			ActiveGoals:       activeGoals,
+			Constraints:       norms.Constraints,
+			Norms:             norms,
+			Beliefs:           beliefs,
 			ConversationPhase: phase,
-			WorkingSummary: beliefs.WorkingSummary,
-			UpdatedAtMs:    updatedAtMs,
+			WorkingSummary:    beliefs.WorkingSummary,
+			UpdatedAtMs:       updatedAtMs,
 		}
 		cognitive.Normalize()
 		return cognitive, nil

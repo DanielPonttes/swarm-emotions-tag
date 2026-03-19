@@ -104,6 +104,16 @@ func main() {
 		case "mock":
 			llmProvider = llm.NewMockProvider()
 			activeLLMProvider = "mock"
+		case "ollama-native":
+			llmReal, err := llm.NewOllamaNativeProvider(llm.OllamaNativeConfig{
+				BaseURL: cfg.LLMBaseURL,
+			})
+			if err != nil {
+				slog.Error("init llm provider", "error", err)
+				os.Exit(1)
+			}
+			llmProvider = llmReal
+			activeLLMProvider = "ollama-native"
 		case "openai-compatible":
 			llmReal, err := llm.NewOpenAICompatibleProvider(llm.OpenAICompatibleConfig{
 				BaseURL: cfg.LLMBaseURL,

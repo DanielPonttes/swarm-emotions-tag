@@ -9,6 +9,7 @@ import (
 type Reporter interface {
 	ObserveStepDuration(step string, duration time.Duration)
 	IncDependencyError(dependency, operation string)
+	ObserveToneCompliance(directive string, score float64)
 }
 
 type noopReporter struct{}
@@ -17,6 +18,8 @@ func (noopReporter) ObserveStepDuration(string, time.Duration) {}
 
 func (noopReporter) IncDependencyError(string, string) {}
 
+func (noopReporter) ObserveToneCompliance(string, float64) {}
+
 func NewNoopReporter() Reporter {
 	return noopReporter{}
 }
@@ -24,6 +27,7 @@ func NewNoopReporter() Reporter {
 type PrometheusReporter struct {
 	stepDurationMs   *prometheus.HistogramVec
 	dependencyErrors *prometheus.CounterVec
+	toneCompliance   *prometheus.GaugeVec
 }
 
 func NewPrometheusReporter(registerer prometheus.Registerer) *PrometheusReporter {
@@ -45,11 +49,19 @@ func NewPrometheusReporter(registerer prometheus.Registerer) *PrometheusReporter
 		},
 		[]string{"dependency", "operation"},
 	)
+	toneCompliance := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "orchestrator_tone_compliance",
+			Help: "Latest tone compliance score by emotional directive.",
+		},
+		[]string{"directive"},
+	)
 
-	registerer.MustRegister(stepDuration, dependencyErrors)
+	registerer.MustRegister(stepDuration, dependencyErrors, toneCompliance)
 	return &PrometheusReporter{
 		stepDurationMs:   stepDuration,
 		dependencyErrors: dependencyErrors,
+		toneCompliance:   toneCompliance,
 	}
 }
 
@@ -65,4 +77,11 @@ func (r *PrometheusReporter) IncDependencyError(dependency, operation string) {
 		return
 	}
 	r.dependencyErrors.WithLabelValues(dependency, operation).Inc()
+}
+
+func (r *PrometheusReporter) ObserveToneCompliance(directive string, score float64) {
+	if r == nil {
+		return
+	}
+	r.toneCompliance.WithLabelValues(directive).Set(score)
 }

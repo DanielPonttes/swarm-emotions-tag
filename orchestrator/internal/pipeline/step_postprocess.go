@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -16,8 +17,15 @@ func (o *Orchestrator) stepPostProcess(
 	fsmResult *FSMResult,
 	ranked []model.RankedMemory,
 	cognitive *model.CognitiveContext,
+	directive EmotionRegion,
 ) {
 	now := time.Now().UnixMilli()
+	responseEmotion, err := o.classifier.ClassifyEmotion(ctx, llmResponse)
+	if err != nil {
+		slog.Warn("failed to classify response emotion", "error", err)
+	} else {
+		measureToneCompliance(directive, responseEmotion, o.metrics)
+	}
 
 	promotionCandidates := make([]model.PromotionCandidate, 0, len(ranked))
 	for _, item := range ranked {

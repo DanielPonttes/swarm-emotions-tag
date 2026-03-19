@@ -46,7 +46,7 @@ func TestApplyCognitiveRerankingPenalizesTechnicalContentForBeginners(t *testing
 }
 
 func TestBuildPromptIncludesStructuredCognitiveSections(t *testing.T) {
-	prompt := buildPrompt(
+	promptPackage := buildPromptPackage(
 		Input{AgentID: "agent-9", Text: "Preciso corrigir o push agora"},
 		[]model.RankedMemory{
 			{
@@ -69,19 +69,36 @@ func TestBuildPromptIncludesStructuredCognitiveSections(t *testing.T) {
 		},
 		prepareCognitiveContext(model.DefaultCognitiveContext("agent-9"), "push urgente", model.EmotionVector{Components: []float32{-0.6, 0.9, -0.3}}),
 		[]model.WorkingMemoryEntry{{Content: "Última tentativa de deploy falhou por rejeição no remote."}},
+		256,
 		"You are the base system prompt.",
 	)
 
 	for _, expected := range []string{
-		"## Internal State",
-		"## Emotional Resonance",
+		"Emotional directive:",
+		"Tone hints:",
 		"Conversation phase:",
-		"Time pressure: high",
 		"Respond in the same language as the user",
 	} {
-		if !strings.Contains(prompt, expected) {
-			t.Fatalf("expected prompt to contain %q\n%s", expected, prompt)
+		if !strings.Contains(promptPackage.SystemPrompt, expected) {
+			t.Fatalf("expected system prompt to contain %q\n%s", expected, promptPackage.SystemPrompt)
 		}
+	}
+	for _, expected := range []string{"## Emotional Resonance", "## Working Memory", "## User Message"} {
+		if !strings.Contains(promptPackage.UserPrompt, expected) {
+			t.Fatalf("expected user prompt to contain %q\n%s", expected, promptPackage.UserPrompt)
+		}
+	}
+}
+
+func TestCalculatePromptBudgetAllocatesMoreMemoryAtHighIntensity(t *testing.T) {
+	low := calculatePromptBudget(256, 0.2)
+	high := calculatePromptBudget(256, 0.9)
+
+	if high.MemoryTokens <= low.MemoryTokens {
+		t.Fatalf("expected high intensity to increase memory budget: low=%+v high=%+v", low, high)
+	}
+	if high.ContextTokens >= low.ContextTokens {
+		t.Fatalf("expected high intensity to reduce context budget: low=%+v high=%+v", low, high)
 	}
 }
 
@@ -94,5 +111,26 @@ func TestFindEmotionDirectiveMatchesPanicAndNeutralFallback(t *testing.T) {
 	neutralDirective := FindEmotionDirective(model.EmotionVector{Components: []float32{0, 0, 0}})
 	if neutralDirective.Name == "" {
 		t.Fatalf("expected fallback directive")
+	}
+}
+
+func TestToneComplianceScoreHighWhenAlignedAndLowWhenMisaligned(t *testing.T) {
+	aligned := toneComplianceScore(
+		[3]float32{-0.7, 0.9, -0.4},
+		[3]float32{-0.65, 0.85, -0.35},
+	)
+	misaligned := toneComplianceScore(
+		[3]float32{-0.7, 0.9, -0.4},
+		[3]float32{0.7, -0.5, 0.6},
+	)
+
+	if aligned <= misaligned {
+		t.Fatalf("expected aligned score > misaligned score: aligned=%f misaligned=%f", aligned, misaligned)
+	}
+	if aligned < 0.8 {
+		t.Fatalf("expected high aligned score, got %f", aligned)
+	}
+	if misaligned > 0.4 {
+		t.Fatalf("expected low misaligned score, got %f", misaligned)
 	}
 }

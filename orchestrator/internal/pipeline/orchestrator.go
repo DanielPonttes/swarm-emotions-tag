@@ -49,7 +49,8 @@ type preparedGeneration struct {
 	fsmResult        *FSMResult
 	ranked           []model.RankedMemory
 	cognitiveContext *model.CognitiveContext
-	prompt           string
+	prompt           PromptPackage
+	generateOpts     connector.GenerateOpts
 }
 
 type Orchestrator struct {
@@ -125,7 +126,7 @@ func (o *Orchestrator) Execute(ctx context.Context, input Input) (*Output, error
 
 		o.observe("step7_generate")
 		stepStart := time.Now()
-		llmResponse, err := o.stepGenerate(runCtx, prepared.prompt)
+		llmResponse, err := o.stepGenerate(runCtx, prepared.prompt.UserPrompt, prepared.generateOpts)
 		o.metrics.ObserveStepDuration("step7_generate", time.Since(stepStart))
 		if err != nil {
 			return nil, fmt.Errorf("step7 generate: %w", err)
@@ -136,7 +137,15 @@ func (o *Orchestrator) Execute(ctx context.Context, input Input) (*Output, error
 		o.runBackground(func() {
 			o.observe("step8_postprocess")
 			backgroundStart := time.Now()
-			o.stepPostProcess(context.Background(), input, llmResponse, prepared.fsmResult, prepared.ranked, prepared.cognitiveContext)
+			o.stepPostProcess(
+				context.Background(),
+				input,
+				llmResponse,
+				prepared.fsmResult,
+				prepared.ranked,
+				prepared.cognitiveContext,
+				prepared.prompt.Directive,
+			)
 			o.metrics.ObserveStepDuration("step8_postprocess", time.Since(backgroundStart))
 		})
 		o.metrics.ObserveStepDuration("step8_postprocess_dispatch", time.Since(stepStart))
@@ -171,7 +180,7 @@ func (o *Orchestrator) ExecuteStream(ctx context.Context, input Input, callbacks
 
 		o.observe("step7_generate")
 		stepStart := time.Now()
-		llmResponse, err := o.stepGenerateStream(runCtx, prepared.prompt, callbacks.OnChunk)
+		llmResponse, err := o.stepGenerateStream(runCtx, prepared.prompt.UserPrompt, prepared.generateOpts, callbacks.OnChunk)
 		o.metrics.ObserveStepDuration("step7_generate", time.Since(stepStart))
 		if err != nil {
 			return nil, fmt.Errorf("step7 generate stream: %w", err)
@@ -182,7 +191,15 @@ func (o *Orchestrator) ExecuteStream(ctx context.Context, input Input, callbacks
 		o.runBackground(func() {
 			o.observe("step8_postprocess")
 			backgroundStart := time.Now()
-			o.stepPostProcess(context.Background(), input, llmResponse, prepared.fsmResult, prepared.ranked, prepared.cognitiveContext)
+			o.stepPostProcess(
+				context.Background(),
+				input,
+				llmResponse,
+				prepared.fsmResult,
+				prepared.ranked,
+				prepared.cognitiveContext,
+				prepared.prompt.Directive,
+			)
 			o.metrics.ObserveStepDuration("step8_postprocess", time.Since(backgroundStart))
 		})
 		o.metrics.ObserveStepDuration("step8_postprocess_dispatch", time.Since(stepStart))
@@ -270,17 +287,31 @@ func (o *Orchestrator) prepareGeneration(ctx context.Context, input Input) (*pre
 		return nil, fmt.Errorf("step6 fuse: %w", err)
 	}
 
+	promptPackage := buildPromptPackage(
+		input,
+		ranked,
+		fsmResult,
+		cognitiveContext,
+		workingMemory,
+		o.generateOpts.MaxTokens,
+		o.generateOpts.SystemPrompt,
+	)
+	generateOpts := o.generateOpts
+	generateOpts.SystemPrompt = promptPackage.SystemPrompt
+
 	return &preparedGeneration{
 		fsmResult:        fsmResult,
 		ranked:           ranked,
 		cognitiveContext: cognitiveContext,
-		prompt:           buildPrompt(input, ranked, fsmResult, cognitiveContext, workingMemory, o.generateOpts.SystemPrompt),
+		prompt:           promptPackage,
+		generateOpts:     generateOpts,
 	}, nil
 }
 
 func (o *Orchestrator) stepGenerateStream(
 	ctx context.Context,
 	prompt string,
+	opts connector.GenerateOpts,
 	onChunk func(string) error,
 ) (string, error) {
 	stepCtx, cancel := withStepTimeout(ctx, 0.45, 2*time.Second)
@@ -288,7 +319,7 @@ func (o *Orchestrator) stepGenerateStream(
 
 	streamingProvider, ok := o.llm.(connector.StreamingLLMProvider)
 	if !ok {
-		full, err := o.llm.Generate(stepCtx, prompt, o.generateOpts)
+		full, err := o.llm.Generate(stepCtx, prompt, opts)
 		if err != nil {
 			return "", err
 		}
@@ -303,7 +334,7 @@ func (o *Orchestrator) stepGenerateStream(
 		return full, nil
 	}
 
-	ch, err := streamingProvider.GenerateStream(stepCtx, prompt, o.generateOpts)
+	ch, err := streamingProvider.GenerateStream(stepCtx, prompt, opts)
 	if err != nil {
 		return "", err
 	}

@@ -15,6 +15,7 @@ import (
 	"github.com/swarm-emotions/orchestrator/internal/connector/llm"
 	"github.com/swarm-emotions/orchestrator/internal/connector/vectorstore"
 	"github.com/swarm-emotions/orchestrator/internal/model"
+	"github.com/swarm-emotions/orchestrator/internal/observability"
 )
 
 func TestExecuteRunsStepsInOrder(t *testing.T) {
@@ -210,6 +211,44 @@ func TestExecuteStreamEmitsMetadataAndChunks(t *testing.T) {
 	}
 }
 
+func TestStepPostProcessRecordsToneCompliance(t *testing.T) {
+	reporter := &spyReporter{}
+	orchestrator := New(
+		emotion.NewMockClient(),
+		vectorstore.NewMockClient(),
+		cache.NewMockClient(),
+		db.NewMockClient(),
+		llm.NewMockProvider(),
+		classifier.NewMockClient(),
+	)
+	orchestrator.SetMetricsReporter(reporter)
+
+	orchestrator.stepPostProcess(
+		context.Background(),
+		Input{AgentID: "agent-tone", Text: "urgent issue"},
+		"thanks for the clear fix",
+		&FSMResult{
+			NewEmotion:   model.EmotionVector{Components: []float32{-0.6, 0.9, -0.3}},
+			NewFsmState:  model.FsmState{StateName: "anxious", MacroState: "negative"},
+			NewIntensity: 0.9,
+			Stimulus:     "urgency",
+		},
+		nil,
+		model.DefaultCognitiveContext("agent-tone"),
+		FindEmotionDirective(model.EmotionVector{Components: []float32{-0.6, 0.9, -0.3}}),
+	)
+
+	if reporter.directive == "" {
+		t.Fatalf("expected tone compliance metric to be recorded")
+	}
+	if reporter.directive != "panic" {
+		t.Fatalf("expected panic directive metric, got %q", reporter.directive)
+	}
+	if reporter.toneScore < 0 || reporter.toneScore > 1 {
+		t.Fatalf("expected tone score in range, got %f", reporter.toneScore)
+	}
+}
+
 type slowVectorStore struct {
 	delay time.Duration
 }
@@ -252,4 +291,19 @@ func (classifierErrorClient) Ready(context.Context) error { return nil }
 
 func (classifierErrorClient) ClassifyEmotion(context.Context, string) (*connector.EmotionClassification, error) {
 	return nil, errClassifierBoom
+}
+
+type spyReporter struct {
+	observability.Reporter
+	directive string
+	toneScore float64
+}
+
+func (s *spyReporter) ObserveStepDuration(string, time.Duration) {}
+
+func (s *spyReporter) IncDependencyError(string, string) {}
+
+func (s *spyReporter) ObserveToneCompliance(directive string, score float64) {
+	s.directive = directive
+	s.toneScore = score
 }

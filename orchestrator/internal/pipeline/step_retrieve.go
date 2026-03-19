@@ -13,7 +13,7 @@ func (o *Orchestrator) stepRetrieve(
 	input Input,
 	fsmResult *FSMResult,
 	_ *model.AgentConfig,
-) ([]model.ScoreCandidate, *model.CognitiveContext, error) {
+) ([]model.ScoreCandidate, *model.CognitiveContext, []model.WorkingMemoryEntry, error) {
 	stepCtx, cancel := withStepTimeout(ctx, 0.25, 400000000)
 	defer cancel()
 
@@ -22,6 +22,7 @@ func (o *Orchestrator) stepRetrieve(
 	var semanticResults []model.MemoryHit
 	var emotionalResults []model.MemoryHit
 	var cognitiveContext *model.CognitiveContext
+	var workingMemory []model.WorkingMemoryEntry
 
 	group.Go(func() error {
 		var err error
@@ -49,11 +50,21 @@ func (o *Orchestrator) stepRetrieve(
 		return err
 	})
 
+	group.Go(func() error {
+		var err error
+		workingMemory, err = o.cache.GetWorkingMemory(groupCtx, input.AgentID)
+		return err
+	})
+
 	if err := group.Wait(); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	return mergeResults(semanticResults, emotionalResults), cognitiveContext, nil
+	cognitiveContext = prepareCognitiveContext(cognitiveContext, input.Text, fsmResult.NewEmotion)
+	candidates := mergeResults(semanticResults, emotionalResults)
+	applyCognitiveReranking(candidates, cognitiveContext, input.Text)
+
+	return candidates, cognitiveContext, workingMemory, nil
 }
 
 func mergeResults(semanticResults, emotionalResults []model.MemoryHit) []model.ScoreCandidate {

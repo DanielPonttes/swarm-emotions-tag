@@ -295,7 +295,7 @@ func (c *Client) DeleteAgentConfig(ctx context.Context, agentID string) error {
 
 func (c *Client) GetCognitiveContext(ctx context.Context, agentID string) (*model.CognitiveContext, error) {
 	const query = `
-SELECT active_goals, norms, beliefs, (EXTRACT(EPOCH FROM updated_at) * 1000)::bigint
+SELECT active_goals, norms, beliefs, conversation_phase, (EXTRACT(EPOCH FROM updated_at) * 1000)::bigint
 FROM cognitive_contexts
 WHERE agent_id = $1
 `
@@ -307,37 +307,44 @@ WHERE agent_id = $1
 			goalsJSON   []byte
 			normsJSON   []byte
 			beliefsJSON []byte
+			phase       string
 			updatedAtMs int64
 		)
-		err := c.pool.QueryRow(callCtx, query, agentID).Scan(&goalsJSON, &normsJSON, &beliefsJSON, &updatedAtMs)
+		err := c.pool.QueryRow(callCtx, query, agentID).Scan(&goalsJSON, &normsJSON, &beliefsJSON, &phase, &updatedAtMs)
 		if err != nil {
 			if err == pgx.ErrNoRows {
-				return &model.CognitiveContext{AgentID: agentID}, nil
+				return model.DefaultCognitiveContext(agentID), nil
 			}
 			return nil, err
 		}
 
-		var goals []string
-		if err := json.Unmarshal(goalsJSON, &goals); err != nil {
+		activeGoals, legacyGoals, err := decodeCognitiveGoals(goalsJSON)
+		if err != nil {
 			return nil, err
 		}
 
-		var norms map[string]any
+		var norms model.CognitiveNorms
 		if err := json.Unmarshal(normsJSON, &norms); err != nil {
 			return nil, err
 		}
-		var beliefs map[string]any
+		var beliefs model.CognitiveBeliefs
 		if err := json.Unmarshal(beliefsJSON, &beliefs); err != nil {
 			return nil, err
 		}
 
-		return &model.CognitiveContext{
+		cognitive := &model.CognitiveContext{
 			AgentID:        agentID,
-			Goals:          goals,
-			Constraints:    readStringSlice(norms["constraints"]),
-			WorkingSummary: readString(beliefs["working_summary"]),
+			Goals:          legacyGoals,
+			ActiveGoals:    activeGoals,
+			Constraints:    norms.Constraints,
+			Norms:          norms,
+			Beliefs:        beliefs,
+			ConversationPhase: phase,
+			WorkingSummary: beliefs.WorkingSummary,
 			UpdatedAtMs:    updatedAtMs,
-		}, nil
+		}
+		cognitive.Normalize()
+		return cognitive, nil
 	})
 	if err != nil {
 		c.metrics.IncDependencyError("postgres", "get_cognitive_context")
@@ -359,37 +366,44 @@ func (c *Client) UpdateCognitiveContext(ctx context.Context, agentID string, cog
 	if cognitive.UpdatedAtMs == 0 {
 		cognitive.UpdatedAtMs = time.Now().UnixMilli()
 	}
+	cognitive.Normalize()
 
-	goalsJSON, err := json.Marshal(cognitive.Goals)
+	goalsJSON, err := json.Marshal(cognitive.ActiveGoals)
 	if err != nil {
 		return err
 	}
-	normsJSON, err := json.Marshal(map[string]any{
-		"constraints": cognitive.Constraints,
-	})
+	normsJSON, err := json.Marshal(cognitive.Norms)
 	if err != nil {
 		return err
 	}
-	beliefsJSON, err := json.Marshal(map[string]any{
-		"working_summary": cognitive.WorkingSummary,
-	})
+	beliefsJSON, err := json.Marshal(cognitive.Beliefs)
 	if err != nil {
 		return err
 	}
 
 	const query = `
-INSERT INTO cognitive_contexts (agent_id, active_goals, norms, beliefs, updated_at)
-VALUES ($1, $2::jsonb, $3::jsonb, $4::jsonb, to_timestamp($5 / 1000.0))
+INSERT INTO cognitive_contexts (agent_id, active_goals, norms, beliefs, conversation_phase, updated_at)
+VALUES ($1, $2::jsonb, $3::jsonb, $4::jsonb, $5, to_timestamp($6 / 1000.0))
 ON CONFLICT (agent_id) DO UPDATE SET
 	active_goals = EXCLUDED.active_goals,
 	norms = EXCLUDED.norms,
 	beliefs = EXCLUDED.beliefs,
+	conversation_phase = EXCLUDED.conversation_phase,
 	updated_at = EXCLUDED.updated_at
 `
 	err = resilience.Do(ctx, c.retry, func(attemptCtx context.Context) error {
 		callCtx, cancel := context.WithTimeout(attemptCtx, 300*time.Millisecond)
 		defer cancel()
-		_, execErr := c.pool.Exec(callCtx, query, agentID, goalsJSON, normsJSON, beliefsJSON, cognitive.UpdatedAtMs)
+		_, execErr := c.pool.Exec(
+			callCtx,
+			query,
+			agentID,
+			goalsJSON,
+			normsJSON,
+			beliefsJSON,
+			cognitive.ConversationPhase,
+			cognitive.UpdatedAtMs,
+		)
 		return execErr
 	})
 	if err != nil {
@@ -691,24 +705,30 @@ func decodeScoreWeights(raw []byte) (model.ScoreWeights, error) {
 	return weights, nil
 }
 
-func readString(value any) string {
-	s, _ := value.(string)
-	return s
-}
-
-func readStringSlice(value any) []string {
-	if value == nil {
-		return nil
-	}
-	items, ok := value.([]any)
-	if !ok {
-		return nil
-	}
-	out := make([]string, 0, len(items))
-	for _, item := range items {
-		if text, ok := item.(string); ok {
-			out = append(out, text)
+func decodeCognitiveGoals(raw []byte) ([]model.CognitiveGoal, []string, error) {
+	var goals []model.CognitiveGoal
+	if err := json.Unmarshal(raw, &goals); err == nil {
+		legacy := make([]string, 0, len(goals))
+		for _, goal := range goals {
+			if goal.Description != "" {
+				legacy = append(legacy, goal.Description)
+			}
 		}
+		return goals, legacy, nil
 	}
-	return out
+
+	var legacyGoals []string
+	if err := json.Unmarshal(raw, &legacyGoals); err != nil {
+		return nil, nil, err
+	}
+
+	goals = make([]model.CognitiveGoal, 0, len(legacyGoals))
+	for i, goal := range legacyGoals {
+		goals = append(goals, model.CognitiveGoal{
+			ID:          fmt.Sprintf("goal_%d", i+1),
+			Description: goal,
+			Priority:    1.0 - float32(i)*0.15,
+		})
+	}
+	return goals, legacyGoals, nil
 }

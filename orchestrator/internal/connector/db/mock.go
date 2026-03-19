@@ -85,22 +85,18 @@ func (c *MockClient) GetCognitiveContext(_ context.Context, agentID string) (*mo
 	defer c.mu.RUnlock()
 	ctx, ok := c.cognitive[agentID]
 	if !ok {
-		return &model.CognitiveContext{AgentID: agentID}, nil
+		return model.DefaultCognitiveContext(agentID), nil
 	}
-	cloned := *ctx
-	cloned.Goals = append([]string(nil), ctx.Goals...)
-	cloned.Constraints = append([]string(nil), ctx.Constraints...)
-	return &cloned, nil
+	return ctx.Clone(), nil
 }
 
 func (c *MockClient) UpdateCognitiveContext(_ context.Context, agentID string, cognitive *model.CognitiveContext) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	cloned := *cognitive
+	cloned := cognitive.Clone()
 	cloned.AgentID = agentID
-	cloned.Goals = append([]string(nil), cognitive.Goals...)
-	cloned.Constraints = append([]string(nil), cognitive.Constraints...)
-	c.cognitive[agentID] = &cloned
+	cloned.Normalize()
+	c.cognitive[agentID] = cloned
 	return nil
 }
 

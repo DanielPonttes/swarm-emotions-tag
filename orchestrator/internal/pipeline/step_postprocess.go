@@ -14,6 +14,7 @@ func (o *Orchestrator) stepPostProcess(
 	llmResponse string,
 	fsmResult *FSMResult,
 	ranked []model.RankedMemory,
+	cognitive *model.CognitiveContext,
 ) {
 	now := time.Now().UnixMilli()
 
@@ -54,9 +55,8 @@ func (o *Orchestrator) stepPostProcess(
 		CreatedAtMs: now,
 	})
 
-	summary := "No cognitive notes"
+	summary := buildWorkingSummary(input.Text, llmResponse, ranked)
 	if len(ranked) > 0 {
-		summary = ranked[0].Content
 		_ = o.cache.PushWorkingMemory(ctx, input.AgentID, model.WorkingMemoryEntry{
 			MemoryID:    ranked[0].MemoryID,
 			Content:     ranked[0].Content,
@@ -65,13 +65,17 @@ func (o *Orchestrator) stepPostProcess(
 		})
 	}
 
-	_ = o.db.UpdateCognitiveContext(ctx, input.AgentID, &model.CognitiveContext{
-		AgentID:        input.AgentID,
-		Goals:          []string{"Respond helpfully", "Preserve emotional continuity"},
-		Constraints:    []string{"Stay concise", "Do not invent facts"},
-		WorkingSummary: summary,
-		UpdatedAtMs:    now,
-	})
+	nextContext := model.DefaultCognitiveContext(input.AgentID)
+	if cognitive != nil {
+		nextContext = cognitive.Clone()
+		nextContext.AgentID = input.AgentID
+	}
+	nextContext.WorkingSummary = summary
+	nextContext.Beliefs.WorkingSummary = summary
+	nextContext.UpdatedAtMs = now
+	nextContext.Normalize()
+
+	_ = o.db.UpdateCognitiveContext(ctx, input.AgentID, nextContext)
 }
 
 func firstComponent(v model.EmotionVector) float32 {
@@ -86,4 +90,21 @@ func absFloat32(value float32) float32 {
 		return -value
 	}
 	return value
+}
+
+func buildWorkingSummary(inputText, llmResponse string, ranked []model.RankedMemory) string {
+	parts := make([]string, 0, 3)
+	if trimmed := shortenText(inputText, 80); trimmed != "" {
+		parts = append(parts, "user="+trimmed)
+	}
+	if len(ranked) > 0 {
+		parts = append(parts, "memory="+shortenText(ranked[0].Content, 80))
+	}
+	if trimmed := shortenText(llmResponse, 80); trimmed != "" {
+		parts = append(parts, "response="+trimmed)
+	}
+	if len(parts) == 0 {
+		return "No cognitive notes"
+	}
+	return strings.Join(parts, " | ")
 }

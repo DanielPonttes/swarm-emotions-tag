@@ -152,7 +152,7 @@ func (o *Orchestrator) Execute(ctx context.Context, input Input) (*Output, error
 
 		o.observe("step5_retrieve")
 		stepStart = time.Now()
-		candidates, cognitiveContext, err := o.stepRetrieve(runCtx, input, fsmResult, agentConfig)
+		candidates, cognitiveContext, workingMemory, err := o.stepRetrieve(runCtx, input, fsmResult, agentConfig)
 		o.metrics.ObserveStepDuration("step5_retrieve", time.Since(stepStart))
 		if err != nil {
 			return nil, fmt.Errorf("step5 retrieve: %w", err)
@@ -168,7 +168,7 @@ func (o *Orchestrator) Execute(ctx context.Context, input Input) (*Output, error
 
 		o.observe("step7_generate")
 		stepStart = time.Now()
-		llmResponse, err := o.stepGenerate(runCtx, input, ranked, fsmResult, cognitiveContext)
+		llmResponse, err := o.stepGenerate(runCtx, input, ranked, fsmResult, cognitiveContext, workingMemory)
 		o.metrics.ObserveStepDuration("step7_generate", time.Since(stepStart))
 		if err != nil {
 			return nil, fmt.Errorf("step7 generate: %w", err)
@@ -179,7 +179,7 @@ func (o *Orchestrator) Execute(ctx context.Context, input Input) (*Output, error
 		o.runBackground(func() {
 			o.observe("step8_postprocess")
 			backgroundStart := time.Now()
-			o.stepPostProcess(context.Background(), input, llmResponse, fsmResult, ranked)
+			o.stepPostProcess(context.Background(), input, llmResponse, fsmResult, ranked, cognitiveContext)
 			o.metrics.ObserveStepDuration("step8_postprocess", time.Since(backgroundStart))
 		})
 		o.metrics.ObserveStepDuration("step8_postprocess_dispatch", time.Since(stepStart))

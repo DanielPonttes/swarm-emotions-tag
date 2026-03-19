@@ -74,14 +74,14 @@ func TestStepRetrieveRunsQueriesInParallel(t *testing.T) {
 	orchestrator := New(
 		emotion.NewMockClient(),
 		slowVectorStore{delay: 75 * time.Millisecond},
-		cache.NewMockClient(),
+		&slowCache{MockClient: cache.NewMockClient(), delay: 75 * time.Millisecond},
 		&slowDB{MockClient: db.NewMockClient(), delay: 75 * time.Millisecond},
 		llm.NewMockProvider(),
 		classifier.NewMockClient(),
 	)
 
 	start := time.Now()
-	_, _, err := orchestrator.stepRetrieve(context.Background(), Input{
+	_, _, _, err := orchestrator.stepRetrieve(context.Background(), Input{
 		AgentID: "agent-2",
 		Text:    "deadline update",
 	}, &FSMResult{
@@ -182,6 +182,16 @@ type slowDB struct {
 func (s *slowDB) GetCognitiveContext(ctx context.Context, agentID string) (*model.CognitiveContext, error) {
 	time.Sleep(s.delay)
 	return s.MockClient.GetCognitiveContext(ctx, agentID)
+}
+
+type slowCache struct {
+	*cache.MockClient
+	delay time.Duration
+}
+
+func (s *slowCache) GetWorkingMemory(ctx context.Context, agentID string) ([]model.WorkingMemoryEntry, error) {
+	time.Sleep(s.delay)
+	return s.MockClient.GetWorkingMemory(ctx, agentID)
 }
 
 var errClassifierBoom = errors.New("classifier boom")

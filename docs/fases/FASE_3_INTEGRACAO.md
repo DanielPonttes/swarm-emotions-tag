@@ -580,6 +580,10 @@ func TestLatency_PipelineWithoutLLM(t *testing.T) {
 
 ## 3.5 Checklist de Aceitacao
 
+> **Status atualizado em 2026-03-19 com base no codigo e nos testes do repositório**
+>
+> **Resumo:** classificacao Python, cache/fallback e parte da resiliencia estao implementados; a integracao gRPC existe sobre TCP, e os itens de E2E/observabilidade distribuida ainda seguem pendentes.
+
 ### Integracao gRPC
 - [ ] Go conecta ao Rust via Unix domain socket
 - [ ] Trace IDs propagam de Go para Rust (visivel nos logs)
@@ -589,9 +593,9 @@ func TestLatency_PipelineWithoutLLM(t *testing.T) {
 
 ### Servico Python
 - [ ] `POST /classify-emotion` retorna vetor 6D para textos variados
-- [ ] Health check indica modelo carregado
-- [ ] Readiness probe funcional (Go espera Python estar pronto)
-- [ ] Cache Redis de classificacoes funcional (hit ratio > 0 em testes)
+- [x] Health check indica modelo carregado
+- [x] Readiness probe funcional (Go espera Python estar pronto)
+- [x] Cache Redis de classificacoes funcional (hit ratio > 0 em testes)
 - [ ] Golden dataset gerado com 1000+ textos (fixture para Fase 7)
 
 ### Pipeline E2E
@@ -603,9 +607,9 @@ func TestLatency_PipelineWithoutLLM(t *testing.T) {
 - [ ] Logs com trace distribuido completo (request ID -> Go -> Rust -> Python)
 
 ### Resiliencia
-- [ ] Python indisponivel -> fallback para vetor neutro (nao crash)
-- [ ] Rust indisponivel -> erro claro retornado ao cliente
-- [ ] Redis indisponivel -> erro claro (nao silencioso)
+- [x] Python indisponivel -> fallback para vetor neutro (nao crash)
+- [x] Rust indisponivel -> erro claro retornado ao cliente
+- [x] Redis indisponivel -> erro claro (nao silencioso)
 
 ---
 

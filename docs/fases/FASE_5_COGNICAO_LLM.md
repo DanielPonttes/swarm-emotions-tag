@@ -711,27 +711,31 @@ func TestToneCompliance_LowWhenMisaligned(t *testing.T) {
 
 ## 5.7 Checklist de Aceitacao
 
+> **Status atualizado em 2026-03-19 com base no codigo e nos testes do repositório**
+>
+> **Resumo:** camada cognitiva, prompt estruturado parcial e streaming SSE ja estao funcionais; a parte de compliance de tom e o budget de tokens ainda seguem pendentes.
+
 ### Camada Cognitiva
-- [ ] Contexto cognitivo carrega/salva do PostgreSQL corretamente
-- [ ] ConversationPhase atualiza baseado em heuristicas
-- [ ] Beliefs (user_expertise, time_pressure) atualizam dinamicamente
-- [ ] Goals re-priorizam baseado em contexto
-- [ ] Re-ranker cognitivo ajusta scores dos candidatos
+- [x] Contexto cognitivo carrega/salva do PostgreSQL corretamente
+- [x] ConversationPhase atualiza baseado em heuristicas
+- [x] Beliefs (user_expertise, time_pressure) atualizam dinamicamente
+- [x] Goals re-priorizam baseado em contexto
+- [x] Re-ranker cognitivo ajusta scores dos candidatos
 
 ### Prompt Estruturado
 - [ ] System prompt inclui diretriz emocional traduzida do vetor
-- [ ] 7 regioes prototipicas cobertas (panic, joyful, calm, empathetic, frustrated, curious, neutral)
+- [x] 7 regioes prototipicas cobertas (panic, joyful, calm, empathetic, frustrated, curious, neutral)
 - [ ] Budget de tokens distribui dinamicamente entre camadas
 - [ ] Intensidade alta -> mais tokens para memorias emocionais
-- [ ] Memorias ressonantes incluidas no prompt com intensidade
-- [ ] Working memory (L1) incluida como historico recente
+- [x] Memorias ressonantes incluidas no prompt com intensidade
+- [x] Working memory (L1) incluida como historico recente
 
 ### Integracao LLM
-- [ ] OpenAI provider funcional (generate + stream)
-- [ ] SSE streaming funciona no endpoint `/api/v1/interact/stream`
-- [ ] Metadata emocional enviada como primeiro evento SSE
-- [ ] Pos-processamento roda async apos stream completar
-- [ ] Fallback para resposta nao-streaming se cliente nao suporta SSE
+- [x] OpenAI provider funcional (generate + stream)
+- [x] SSE streaming funciona no endpoint `/api/v1/interact/stream`
+- [x] Metadata emocional enviada como primeiro evento SSE
+- [x] Pos-processamento roda async apos stream completar
+- [x] Fallback para resposta nao-streaming se cliente nao suporta SSE
 
 ### Compliance de Tom
 - [ ] Metrica de compliance medida a cada interacao

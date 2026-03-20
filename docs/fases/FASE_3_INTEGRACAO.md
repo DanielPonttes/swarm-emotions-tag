@@ -599,7 +599,7 @@ func TestLatency_PipelineWithoutLLM(t *testing.T) {
 
 > **Status atualizado em 2026-03-19 com base no codigo e nos testes do repositório**
 >
-> **Resumo:** classificacao Python, cache/fallback e parte da resiliencia estao implementados; a integracao gRPC Go -> Rust ja roda por Unix socket no compose, e a correlacao basica de `request_id` ja aparece nos logs do Go, Rust e Python. Os gaps principais agora ficaram concentrados em E2E com LLM real e observabilidade via OpenTelemetry.
+> **Resumo:** classificacao Python, cache/fallback e parte da resiliencia estao implementados; a integracao gRPC Go -> Rust ja roda por Unix socket no compose, a correlacao basica de `request_id` ja aparece nos logs do Go, Rust e Python, e o pipeline E2E com LLM real foi validado localmente com `ollama-native` + `Qwen/Qwen3.5-27B`. Os gaps principais agora ficaram concentrados em automacao E2E longa e observabilidade via OpenTelemetry.
 
 ### Integracao gRPC
 - [x] Go conecta ao Rust via Unix domain socket
@@ -616,8 +616,8 @@ func TestLatency_PipelineWithoutLLM(t *testing.T) {
 - [ ] Golden dataset gerado com 1000+ textos (fixture para Fase 7)
 
 ### Pipeline E2E
-- [ ] Pipeline completo funciona: HTTP -> Go -> Python -> Rust -> Qdrant -> LLM -> response
-- [ ] Latencia < 5s por turno (com LLM real)
+- [x] Pipeline completo funciona: HTTP -> Go -> Python -> Rust -> Qdrant -> LLM -> response
+- [x] Latencia < 5s por turno (com LLM real)
 - [ ] Latencia < 100ms (sem LLM)
 - [ ] Estado emocional evolui coerentemente em 20+ turnos
 - [ ] Modo deterministico: mesmos inputs -> mesmos estados
@@ -649,7 +649,7 @@ inicial em `Qwen/Qwen3.5-27B`, sem bloquear o restante do pipeline E2E.
 
 ### 3.7.1 Foundation entregue
 
-- Provider LLM real adicionado no orquestrador via API `openai-compatible`.
+- Provider LLM real adicionado no orquestrador via `openai-compatible` e `ollama-native`.
 - Connector do classifier no Go preparado com:
   - cache Redis de classificacoes
   - fallback para vetor neutro em falha runtime do Python
@@ -685,8 +685,8 @@ controlada antes de evoluir para streaming, traces distribuidos e tuning fino.
 
 ### 3.7.3 Sequencia recomendada a partir daqui
 
-1. Subir um servidor local OpenAI-compatible para `Qwen/Qwen3.5-27B`.
-2. Rodar o orquestrador com `LLM_PROVIDER=openai-compatible`.
+1. Subir um servidor local OpenAI-compatible ou Ollama native para `Qwen/Qwen3.5-27B`.
+2. Rodar o orquestrador com `LLM_PROVIDER=openai-compatible` ou `LLM_PROVIDER=ollama-native`.
 3. Validar `GET /ready` e um `POST /api/v1/interact` com Rust/Python reais.
 4. Medir latencia por turno com `LLM_MAX_TOKENS=256`.
 5. So depois disso seguir para:
@@ -698,6 +698,7 @@ controlada antes de evoluir para streaming, traces distribuidos e tuning fino.
 
 - Python classifier real ja esta preparado, mas ainda depende de execucao com extras `ml` e validacao E2E no ambiente alvo.
 - A correlacao basica por `x-trace-id` ja aparece nos logs do Go, Rust e Python, mas a instrumentacao completa via OpenTelemetry ainda segue pendente.
+- O fluxo validado com Ollama local atualmente roda de forma mais direta com `orchestrator` no host; manter `orchestrator` no compose e o modelo no host ainda depende de conectividade da bridge Docker ate `11434`.
 - Transporte Go -> Rust no compose ja usa Unix socket; o listener TCP foi mantido apenas para desenvolvimento no host e compatibilidade com scripts atuais.
 - O connector Go do `emotion-engine` agora possui suite `integration` cobrindo `Ready`, as 5 RPCs e um caso real de `INVALID_ARGUMENT`; o que segue pendente e ampliar a cobertura dos outros status codes de erro.
 - Suite E2E single-agent com LLM real ainda nao foi implementada.

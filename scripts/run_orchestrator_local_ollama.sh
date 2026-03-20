@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+: "${HTTP_PORT:=8080}"
+: "${EMOTION_ENGINE_ADDR:=127.0.0.1:50051}"
+: "${QDRANT_ADDR:=127.0.0.1:6333}"
+: "${REDIS_ADDR:=127.0.0.1:6379}"
+: "${POSTGRES_DSN:=postgres://emotionrag:dev_password_change_me@127.0.0.1:5433/emotionrag?sslmode=disable}"
+: "${PYTHON_ML_URL:=http://127.0.0.1:8090}"
+: "${LLM_PROVIDER:=ollama-native}"
+: "${LLM_BASE_URL:=http://127.0.0.1:11434}"
+: "${LLM_MODEL:=Qwen/Qwen3.5-27B}"
+: "${LLM_ENABLE_THINKING:=false}"
+
+cat <<EOF
+Running orchestrator on host with local Ollama.
+  HTTP_PORT=$HTTP_PORT
+  EMOTION_ENGINE_ADDR=$EMOTION_ENGINE_ADDR
+  QDRANT_ADDR=$QDRANT_ADDR
+  REDIS_ADDR=$REDIS_ADDR
+  POSTGRES_DSN=$POSTGRES_DSN
+  PYTHON_ML_URL=$PYTHON_ML_URL
+  LLM_PROVIDER=$LLM_PROVIDER
+  LLM_BASE_URL=$LLM_BASE_URL
+  LLM_MODEL=$LLM_MODEL
+  LLM_ENABLE_THINKING=$LLM_ENABLE_THINKING
+EOF
+
+cd "$ROOT_DIR/orchestrator"
+exec env \
+  HTTP_PORT="$HTTP_PORT" \
+  EMOTION_ENGINE_ADDR="$EMOTION_ENGINE_ADDR" \
+  QDRANT_ADDR="$QDRANT_ADDR" \
+  REDIS_ADDR="$REDIS_ADDR" \
+  POSTGRES_DSN="$POSTGRES_DSN" \
+  PYTHON_ML_URL="$PYTHON_ML_URL" \
+  LLM_PROVIDER="$LLM_PROVIDER" \
+  LLM_BASE_URL="$LLM_BASE_URL" \
+  LLM_MODEL="$LLM_MODEL" \
+  LLM_ENABLE_THINKING="$LLM_ENABLE_THINKING" \
+  go run ./cmd/server

@@ -102,12 +102,34 @@ Se voce rodar o orquestrador via `docker compose`, o compose ja aponta para
 `http://host.docker.internal:8000/v1` por padrao quando `LLM_PROVIDER` sair de
 `mock`.
 
+Tambem existe o caminho validado com `ollama-native`, sem camada OpenAI
+compatível intermediaria:
+
+```bash
+OLLAMA_HOST=0.0.0.0:11434 ollama serve
+ollama pull qwen3.5:27b
+make orchestrator-local-ollama
+```
+
+Esse alvo sobe o `orchestrator` no host, em `:8080`, usando:
+
+```bash
+LLM_PROVIDER=ollama-native
+LLM_BASE_URL=http://127.0.0.1:11434
+LLM_MODEL=Qwen/Qwen3.5-27B
+```
+
+Observacao importante: neste host, o caminho validado foi `Ollama no host` +
+`orchestrator no host` + dependencias reais em Docker (`emotion-engine`,
+`python-ml`, Redis, Postgres e Qdrant). Rodar o `orchestrator` no compose e o
+Ollama no host ainda depende de conectividade da bridge Docker ate a porta
+`11434`.
+
 Observacoes praticas para a Fase 3:
 
 - Comece com respostas curtas (`LLM_MAX_TOKENS=256`) para reduzir latencia.
 - Mantenha `LLM_ENABLE_THINKING=false` neste pipeline inicial.
-- O provider real so depende de uma API OpenAI-compatible; o servidor do modelo
-  pode ser trocado sem alterar o codigo Go.
+- O provider real pode ser tanto `openai-compatible` quanto `ollama-native`.
 
 ## Classificador Python (Fase 3)
 

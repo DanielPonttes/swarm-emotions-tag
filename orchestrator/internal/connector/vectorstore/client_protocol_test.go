@@ -110,14 +110,14 @@ func TestUpsertMemoryUsesNamedVectors(t *testing.T) {
 
 func TestQueryUsesNamedVectorSelectors(t *testing.T) {
 	type capturedRequest struct {
-		VectorName string        `json:"vector_name"`
-		Vector     []float32     `json:"vector"`
-		Filter     *qdrantFilter `json:"filter"`
+		Using  string        `json:"using"`
+		Query  []float32     `json:"query"`
+		Filter *qdrantFilter `json:"filter"`
 	}
 
 	var requests []capturedRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/collections/test/points/search" {
+		if r.Method != http.MethodPost || r.URL.Path != "/collections/test/points/query" {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.String())
 		}
 		var payload capturedRequest
@@ -125,7 +125,7 @@ func TestQueryUsesNamedVectorSelectors(t *testing.T) {
 			t.Fatalf("decode search payload: %v", err)
 		}
 		requests = append(requests, payload)
-		_, _ = io.WriteString(w, `{"status":"ok","result":[{"id":"p1","score":0.9,"payload":{"agent_id":"agent-1","memory_id":"memory-1","content":"deadline escalation","memory_level":2}}]}`)
+		_, _ = io.WriteString(w, `{"status":"ok","result":{"points":[{"id":"p1","score":0.9,"payload":{"agent_id":"agent-1","memory_id":"memory-1","content":"deadline escalation","memory_level":2}}]}}`)
 	}))
 	defer server.Close()
 
@@ -148,17 +148,17 @@ func TestQueryUsesNamedVectorSelectors(t *testing.T) {
 	if len(requests) != 2 {
 		t.Fatalf("expected 2 search requests, got %d", len(requests))
 	}
-	if requests[0].VectorName != semanticVectorName {
-		t.Fatalf("expected semantic vector name, got %q", requests[0].VectorName)
+	if requests[0].Using != semanticVectorName {
+		t.Fatalf("expected semantic vector name, got %q", requests[0].Using)
 	}
-	if len(requests[0].Vector) != semanticVectorSize {
-		t.Fatalf("expected semantic query vector size %d, got %d", semanticVectorSize, len(requests[0].Vector))
+	if len(requests[0].Query) != semanticVectorSize {
+		t.Fatalf("expected semantic query vector size %d, got %d", semanticVectorSize, len(requests[0].Query))
 	}
-	if requests[1].VectorName != emotionalVectorName {
-		t.Fatalf("expected emotional vector name, got %q", requests[1].VectorName)
+	if requests[1].Using != emotionalVectorName {
+		t.Fatalf("expected emotional vector name, got %q", requests[1].Using)
 	}
-	if len(requests[1].Vector) != emotionalVectorSize {
-		t.Fatalf("expected emotional query vector size %d, got %d", emotionalVectorSize, len(requests[1].Vector))
+	if len(requests[1].Query) != emotionalVectorSize {
+		t.Fatalf("expected emotional query vector size %d, got %d", emotionalVectorSize, len(requests[1].Query))
 	}
 	for _, request := range requests {
 		if request.Filter == nil || len(request.Filter.Must) != 1 || request.Filter.Must[0].Key != "agent_id" {
@@ -198,7 +198,7 @@ func TestDeleteStaleMemoriesDeletesWholePoint(t *testing.T) {
 		t.Fatalf("expected deleted memory-1, got %#v", deleted)
 	}
 	points := deletedBody["points"].([]any)
-	if len(points) != 1 || points[0].(string) != "point-1" {
+	if len(points) != 1 || points[0].(string) != normalizePointID("point-1") {
 		t.Fatalf("expected full point deletion for point-1, got %#v", deletedBody)
 	}
 }

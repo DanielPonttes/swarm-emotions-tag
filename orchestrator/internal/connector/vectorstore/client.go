@@ -38,9 +38,9 @@ type Client struct {
 	retry      resilience.RetryPolicy
 }
 
-type searchRequest struct {
-	VectorName  string        `json:"vector_name,omitempty"`
-	Vector      []float32     `json:"vector"`
+type queryRequest struct {
+	Using       string        `json:"using,omitempty"`
+	Query       []float32     `json:"query"`
 	Limit       int           `json:"limit"`
 	WithPayload bool          `json:"with_payload"`
 	Filter      *qdrantFilter `json:"filter,omitempty"`
@@ -71,9 +71,13 @@ type qdrantRangeCondition struct {
 	Lte any `json:"lte,omitempty"`
 }
 
-type searchResponse struct {
-	Status string        `json:"status"`
-	Result []searchPoint `json:"result"`
+type queryResponse struct {
+	Status string      `json:"status"`
+	Result queryResult `json:"result"`
+}
+
+type queryResult struct {
+	Points []searchPoint `json:"points"`
 }
 
 type scrollResponse struct {
@@ -345,13 +349,14 @@ func (c *Client) UpdateMemoryLevel(ctx context.Context, memoryID string, level u
 	if level == 0 {
 		return fmt.Errorf("memory level is required")
 	}
+	pointID := normalizePointID(memoryID)
 
 	payload, err := json.Marshal(map[string]any{
 		"payload": map[string]any{
 			"memory_level":       level,
 			"is_pseudopermanent": level >= 3,
 		},
-		"points": []string{memoryID},
+		"points": []string{pointID},
 	})
 	if err != nil {
 		return err
@@ -449,15 +454,15 @@ func (c *Client) DeleteStaleMemories(ctx context.Context, params connector.Memor
 }
 
 func (c *Client) search(ctx context.Context, vector []float32, agentID string, limit int, semantic bool) ([]model.MemoryHit, error) {
-	reqBody := searchRequest{
-		Vector:      vector,
+	reqBody := queryRequest{
+		Query:       vector,
 		Limit:       normalizeSearchLimit(limit),
 		WithPayload: true,
 	}
 	if semantic {
-		reqBody.VectorName = semanticVectorName
+		reqBody.Using = semanticVectorName
 	} else {
-		reqBody.VectorName = emotionalVectorName
+		reqBody.Using = emotionalVectorName
 	}
 	if agentID != "" {
 		reqBody.Filter = &qdrantFilter{
@@ -480,7 +485,7 @@ func (c *Client) search(ctx context.Context, vector []float32, agentID string, l
 	hits, err := resilience.DoValue(ctx, c.retry, func(attemptCtx context.Context) ([]model.MemoryHit, error) {
 		callCtx, cancel := context.WithTimeout(attemptCtx, 350*time.Millisecond)
 		defer cancel()
-		url := fmt.Sprintf("%s/collections/%s/points/search", c.baseURL, c.collection)
+		url := fmt.Sprintf("%s/collections/%s/points/query", c.baseURL, c.collection)
 		req, err := http.NewRequestWithContext(callCtx, http.MethodPost, url, bytes.NewReader(payload))
 		if err != nil {
 			return nil, err
@@ -497,13 +502,13 @@ func (c *Client) search(ctx context.Context, vector []float32, agentID string, l
 			return nil, fmt.Errorf("qdrant search failed with %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 		}
 
-		var decoded searchResponse
+		var decoded queryResponse
 		if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
 			return nil, err
 		}
 
-		result := make([]model.MemoryHit, 0, len(decoded.Result))
-		for _, point := range decoded.Result {
+		result := make([]model.MemoryHit, 0, len(decoded.Result.Points))
+		for _, point := range decoded.Result.Points {
 			stored := decodeStoredMemory(point)
 			hit := model.MemoryHit{
 				PointID:           stored.PointID,
@@ -894,10 +899,10 @@ func ensureValenceMagnitude(memory model.StoredMemory) float32 {
 }
 
 func pointIDForMemory(memory model.StoredMemory) string {
-	if pointID := strings.TrimSpace(memory.PointID); pointID != "" {
+	if pointID := normalizePointID(memory.PointID); pointID != "" {
 		return pointID
 	}
-	return memory.MemoryID
+	return normalizePointID(memory.MemoryID)
 }
 
 func dedupeMemoryTouches(touches []model.MemoryAccessUpdate) []model.MemoryAccessUpdate {
@@ -921,6 +926,64 @@ func dedupeMemoryTouches(touches []model.MemoryAccessUpdate) []model.MemoryAcces
 		return out[i].PointID < out[j].PointID
 	})
 	return out
+}
+
+func normalizePointID(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if isUnsignedIntegerString(value) || isUUIDString(value) {
+		return value
+	}
+
+	sum := sha1.Sum([]byte(value))
+	derived := sum[:16]
+	derived[6] = (derived[6] & 0x0f) | 0x50
+	derived[8] = (derived[8] & 0x3f) | 0x80
+	return fmt.Sprintf(
+		"%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+		derived[0], derived[1], derived[2], derived[3],
+		derived[4], derived[5],
+		derived[6], derived[7],
+		derived[8], derived[9],
+		derived[10], derived[11], derived[12], derived[13], derived[14], derived[15],
+	)
+}
+
+func isUnsignedIntegerString(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func isUUIDString(value string) bool {
+	if len(value) != 36 {
+		return false
+	}
+	for idx, r := range value {
+		switch idx {
+		case 8, 13, 18, 23:
+			if r != '-' {
+				return false
+			}
+		default:
+			if !isHexDigit(r) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func isHexDigit(r rune) bool {
+	return (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
 }
 
 func firstNonEmptyString(values ...any) string {

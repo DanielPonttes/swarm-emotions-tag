@@ -316,14 +316,23 @@ func TestClientIntegration_TouchMemoriesUpdatesAccessMetadata(t *testing.T) {
 		t.Fatalf("upsert memory: %v", err)
 	}
 
+	memories, err := client.GetMemoriesByLevel(ctx, agentID, 2, 10)
+	if err != nil {
+		t.Fatalf("get memories by level before touch: %v", err)
+	}
+	stored := findStoredMemory(memories, memory.MemoryID)
+	if stored == nil {
+		t.Fatalf("expected stored memory %q before touch, got %#v", memory.MemoryID, memories)
+	}
+
 	touchedAt := time.Now().UnixMilli()
 	if err := client.TouchMemories(ctx, []model.MemoryAccessUpdate{
-		{PointID: memory.MemoryID, MemoryID: memory.MemoryID, AccessCount: 2},
+		{PointID: stored.PointID, MemoryID: memory.MemoryID, AccessCount: 2},
 	}, touchedAt); err != nil {
 		t.Fatalf("touch memories: %v", err)
 	}
 
-	memories, err := client.GetMemoriesByLevel(ctx, agentID, 2, 10)
+	memories, err = client.GetMemoriesByLevel(ctx, agentID, 2, 10)
 	if err != nil {
 		t.Fatalf("get memories by level: %v", err)
 	}

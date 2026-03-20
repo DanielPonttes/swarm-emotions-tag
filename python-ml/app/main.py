@@ -3,12 +3,20 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.classifier import DEFAULT_MODEL_NAME, EmotionClassifier
+from app.runtime import collect_runtime_info, runtime_info_dict
 
 logger = logging.getLogger("uvicorn.error")
 TRACE_ID_HEADER = "x-trace-id"
+
+
+class RuntimeInfoResponse(BaseModel):
+    torch_version: str | None = None
+    cuda_available: bool
+    cuda_device_count: int
+    cuda_devices: list[str] = Field(default_factory=list)
 
 
 class HealthResponse(BaseModel):
@@ -16,6 +24,9 @@ class HealthResponse(BaseModel):
     model_loaded: bool
     classifier_mode: str
     model_name: str
+    classifier_device: str
+    classifier_batch_size: int
+    runtime: RuntimeInfoResponse
     load_error: str | None = None
 
 
@@ -32,10 +43,13 @@ class ClassifyResponse(BaseModel):
 _classifier: EmotionClassifier | None = None
 _classifier_mode = "heuristic"
 _classifier_model_name = DEFAULT_MODEL_NAME
+_classifier_device = "cpu"
+_classifier_batch_size = 8
+_runtime_info = runtime_info_dict(collect_runtime_info())
 _load_error: str | None = None
 
 
-def _classifier_config() -> tuple[str, str, str, int]:
+def _classifier_config() -> tuple[str, str, str, int, int]:
     mode = os.getenv("CLASSIFIER_MODE", "heuristic").strip().lower() or "heuristic"
     model_name = (
         os.getenv("CLASSIFIER_MODEL_NAME", "").strip()
@@ -44,14 +58,19 @@ def _classifier_config() -> tuple[str, str, str, int]:
     )
     device = os.getenv("CLASSIFIER_DEVICE", "cpu").strip() or "cpu"
     top_k = int(os.getenv("CLASSIFIER_TOP_K", "5"))
-    return mode, model_name, device, top_k
+    batch_size = int(os.getenv("CLASSIFIER_BATCH_SIZE", "8"))
+    return mode, model_name, device, top_k, batch_size
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    global _classifier, _classifier_mode, _classifier_model_name, _load_error
+    global _classifier, _classifier_mode, _classifier_model_name
+    global _classifier_device, _classifier_batch_size, _runtime_info, _load_error
 
-    _classifier_mode, _classifier_model_name, device, top_k = _classifier_config()
+    _classifier_mode, _classifier_model_name, device, top_k, batch_size = _classifier_config()
+    _classifier_device = device
+    _classifier_batch_size = max(1, batch_size)
+    _runtime_info = runtime_info_dict(collect_runtime_info())
     try:
         logger.info(
             "Loading emotion classifier",
@@ -60,6 +79,8 @@ async def lifespan(_: FastAPI):
                 "model_name": _classifier_model_name,
                 "device": device,
                 "top_k": top_k,
+                "batch_size": _classifier_batch_size,
+                "runtime": _runtime_info,
             },
         )
         _classifier = EmotionClassifier(
@@ -67,6 +88,7 @@ async def lifespan(_: FastAPI):
             model_name=_classifier_model_name,
             device=device,
             top_k=top_k,
+            batch_size=_classifier_batch_size,
         )
         _load_error = None
         logger.info("Emotion classifier loaded")
@@ -102,6 +124,9 @@ async def health() -> HealthResponse:
         model_loaded=_classifier is not None,
         classifier_mode=_classifier_mode,
         model_name=_classifier_model_name,
+        classifier_device=_classifier_device,
+        classifier_batch_size=_classifier_batch_size,
+        runtime=RuntimeInfoResponse(**_runtime_info),
         load_error=_load_error,
     )
 

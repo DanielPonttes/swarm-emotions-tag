@@ -17,6 +17,8 @@ help:
 	@echo "  make docker-install-ubuntu - Instala Docker Engine oficial no Ubuntu"
 	@echo "  make qdrant-up     - Sobe apenas o Qdrant e aguarda readiness"
 	@echo "  make orchestrator-local-ollama - Roda o orchestrator no host com Ollama local"
+	@echo "  make python-ml-setup-venv - Prepara a venv do python-ml com extras opcionais"
+	@echo "  make python-ml-gpu-long-run - Soak/benchmark longo do classifier em GPU"
 	@echo "  make phase3-smoke-qwen-local - Smoke E2E real com Ollama/Qwen local"
 	@echo "  make phase3-multiturn-qwen-local - Dialogo multi-turno real com Qwen local"
 	@echo "  make phase3-determinism-qwen-local - Regressao deterministica de estados com Qwen local"
@@ -81,7 +83,7 @@ proto-gen-go:
 proto-gen-rust:
 	cd emotion-engine && cargo check
 
-.PHONY: docker-up docker-down docker-infra docker-build docker-install-ubuntu qdrant-up orchestrator-local-ollama phase3-smoke-qwen-local phase3-multiturn-qwen-local phase3-determinism-qwen-local phase3-behavioral-qwen-local phase3-transformers-qwen-local phase3-latency-mock-local
+.PHONY: docker-up docker-down docker-infra docker-build docker-install-ubuntu qdrant-up orchestrator-local-ollama python-ml-setup-venv python-ml-gpu-long-run phase3-smoke-qwen-local phase3-multiturn-qwen-local phase3-determinism-qwen-local phase3-behavioral-qwen-local phase3-transformers-qwen-local phase3-latency-mock-local
 docker-up:
 	docker compose up -d --build
 
@@ -102,6 +104,12 @@ qdrant-up:
 
 orchestrator-local-ollama:
 	./scripts/run_orchestrator_local_ollama.sh
+
+python-ml-setup-venv:
+	./scripts/setup_python_ml_venv.sh
+
+python-ml-gpu-long-run:
+	./scripts/python_ml_gpu_long_run.sh
 
 phase3-smoke-qwen-local:
 	./scripts/phase3/smoke_qwen_local.sh

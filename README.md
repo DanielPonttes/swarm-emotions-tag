@@ -220,6 +220,56 @@ No orquestrador:
 - `CLASSIFIER_CACHE_ENABLED=true` ativa cache Redis das classificacoes.
 - `CLASSIFIER_FALLBACK_NEUTRAL=true` faz fallback para vetor neutro se o Python falhar em runtime.
 
+## Preparacao para GPU / RTX 5090
+
+O host atual ja expõe a GPU via `nvidia-smi`, mas a venv local do `python-ml`
+nao vem com `torch` e `transformers` por padrao. Para preparar a venv com os
+extras de ML:
+
+```bash
+make python-ml-setup-venv
+```
+
+Esse alvo cria ou reutiliza `python-ml/.venv`, instala `.[ml]` e imprime o
+runtime detectado (`torch_version`, `cuda_available`, `cuda_devices`). Se voce
+precisar usar um indice especifico para as wheels de GPU, exporte antes:
+
+```bash
+export PIP_INDEX_URL=...
+export PIP_EXTRA_INDEX_URL=...
+make python-ml-setup-venv
+```
+
+O `/health` do `python-ml` agora tambem expõe `classifier_device`,
+`classifier_batch_size` e o bloco `runtime`, o que facilita confirmar se o
+servico realmente subiu em `cuda:0`.
+
+Para uma rodada longa de benchmark/soak do classifier direto na GPU:
+
+```bash
+CLASSIFIER_DEVICE=cuda:0 \
+CLASSIFIER_BATCH_SIZE=64 \
+PYTHON_ML_BENCH_DURATION_SEC=1800 \
+make python-ml-gpu-long-run
+```
+
+Por padrao esse fluxo:
+
+- prepara a venv do `python-ml`
+- carrega `monologg/bert-base-cased-goemotions-original` em `transformers`
+- exige uma GPU contendo `RTX 5090`
+- roda benchmark em lote por 30 minutos
+- grava um JSON em `artifacts/python-ml-gpu/` com throughput, `p95/p99`,
+  latencia media por batch/item e estatisticas de memoria CUDA
+
+Se quiser usar um corpus proprio em vez do conjunto embutido:
+
+```bash
+PYTHON_ML_BENCH_TEXTS_FILE=/caminho/textos.txt make python-ml-gpu-long-run
+```
+
+Cada linha nao vazia do arquivo vira uma amostra do benchmark.
+
 ## Endpoints
 
 - Orchestrator: `GET /health`, `GET /ready`, `POST /api/v1/interact`,

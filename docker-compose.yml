@@ -101,6 +101,7 @@ services:
       CLASSIFIER_MODEL_NAME: ${CLASSIFIER_MODEL_NAME:-monologg/bert-base-cased-goemotions-original}
       CLASSIFIER_DEVICE: ${CLASSIFIER_DEVICE:-cpu}
       CLASSIFIER_TOP_K: ${CLASSIFIER_TOP_K:-5}
+      CLASSIFIER_BATCH_SIZE: ${CLASSIFIER_BATCH_SIZE:-8}
 
 volumes:
   grpc_socket:

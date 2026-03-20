@@ -68,11 +68,13 @@ class EmotionClassifier:
         model_name: str = DEFAULT_MODEL_NAME,
         device: str = "cpu",
         top_k: int = 5,
+        batch_size: int = 8,
     ) -> None:
         self.mode = mode.strip().lower() or "heuristic"
         self.model_name = model_name.strip() or DEFAULT_MODEL_NAME
         self.device = device.strip() or "cpu"
         self.top_k = max(1, top_k)
+        self.batch_size = max(1, batch_size)
         self._pipe: Any | None = None
 
         if self.mode == "transformers":
@@ -92,6 +94,15 @@ class EmotionClassifier:
         if self.mode == "transformers":
             return self._classify_with_transformers(normalized)
         return self._classify_with_heuristics(normalized)
+
+    def classify_many(self, texts: list[str]) -> list[ClassificationResult]:
+        if not texts:
+            return []
+
+        normalized_texts = [text.strip() for text in texts]
+        if self.mode == "transformers":
+            return self._classify_many_with_transformers(normalized_texts)
+        return [self._classify_with_heuristics(text) for text in normalized_texts]
 
     def _build_transformers_pipeline(self) -> Any:
         try:
@@ -113,10 +124,42 @@ class EmotionClassifier:
             raise RuntimeError("transformers pipeline is not initialized")
 
         raw_results = self._pipe(text)
-        if isinstance(raw_results, list) and raw_results and isinstance(raw_results[0], list):
-            results = raw_results[0]
-        else:
-            results = raw_results
+        return self._classification_from_transformers_output(raw_results)
+
+    def _classify_many_with_transformers(self, texts: list[str]) -> list[ClassificationResult]:
+        if self._pipe is None:
+            raise RuntimeError("transformers pipeline is not initialized")
+
+        outputs: list[ClassificationResult] = [
+            ClassificationResult(
+                emotion_vector=NEUTRAL_VECTOR.copy(),
+                label="neutral",
+                confidence=0.0,
+            )
+            for _ in texts
+        ]
+        active_indexes: list[int] = []
+        active_texts: list[str] = []
+
+        for index, text in enumerate(texts):
+            if text:
+                active_indexes.append(index)
+                active_texts.append(text)
+
+        if not active_texts:
+            return outputs
+
+        raw_results = self._pipe(active_texts, batch_size=self.batch_size)
+        if not isinstance(raw_results, list) or len(raw_results) != len(active_texts):
+            raise RuntimeError("unexpected transformers batch output shape")
+
+        for index, raw_result in zip(active_indexes, raw_results):
+            outputs[index] = self._classification_from_transformers_output(raw_result)
+
+        return outputs
+
+    def _classification_from_transformers_output(self, raw_results: Any) -> ClassificationResult:
+        results = _normalize_transformers_results(raw_results)
 
         weighted_scores: list[tuple[str, float]] = []
         for item in results[: self.top_k]:
@@ -191,3 +234,13 @@ def _resolve_transformers_device(raw_device: str) -> int:
     if normalized.startswith("cuda:"):
         return int(normalized.split(":", 1)[1])
     return int(normalized)
+
+
+def _normalize_transformers_results(raw_results: Any) -> list[dict[str, Any]]:
+    if isinstance(raw_results, dict):
+        return [raw_results]
+    if isinstance(raw_results, list):
+        if raw_results and isinstance(raw_results[0], list):
+            return raw_results[0]
+        return raw_results
+    return []

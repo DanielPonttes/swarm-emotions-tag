@@ -40,6 +40,25 @@ func (c *Client) Close() error {
 	return c.conn.Close()
 }
 
+func (c *Client) Ready(ctx context.Context) error {
+	callCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
+
+	_, err := c.client.TransitionState(callCtx, &pb.TransitionStateRequest{
+		CurrentState: &pb.FsmState{
+			StateName:   "neutral",
+			MacroState:  "neutral",
+			EnteredAtMs: time.Now().UnixMilli(),
+		},
+		Stimulus: "novelty",
+		AgentId:  "ready-check",
+	})
+	if err != nil {
+		return fmt.Errorf("emotion engine ready check: %w", err)
+	}
+	return nil
+}
+
 func (c *Client) TransitionState(ctx context.Context, req *connector.TransitionRequest) (*connector.TransitionResponse, error) {
 	callCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel()

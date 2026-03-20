@@ -96,6 +96,7 @@ use opentelemetry::propagation::TextMapPropagator;
 - O `orchestrator` em container usa `EMOTION_ENGINE_ADDR=unix:///var/run/emotion-engine/engine.sock`.
 - O `emotion-engine` sobe o listener Unix em `GRPC_SOCKET_PATH` e mantem TCP em `GRPC_PORT`
   para fluxos de desenvolvimento no host.
+- O `/ready` do orquestrador agora inclui o `emotion-engine` entre as dependencias verificadas.
 - O HTTP `request_id` do orquestrador e preservado no `context.Context`.
 - O client Go injeta `x-trace-id` no metadata gRPC para todas as RPCs ao `emotion-engine`.
 - O `emotion-engine` aplica interceptor tonic para capturar `x-trace-id`/`traceparent`
@@ -601,8 +602,8 @@ func TestLatency_PipelineWithoutLLM(t *testing.T) {
 - [x] Go conecta ao Rust via Unix domain socket
 - [x] Trace IDs propagam de Go para Rust (visivel nos logs)
 - [ ] Erros Rust aparecem como gRPC status codes adequados no Go
-- [ ] Todas as 5 RPCs funcionam Go -> Rust
-- [ ] ProcessInteraction batch executa FSM + vector + fusion em 1 chamada
+- [x] Todas as 5 RPCs funcionam Go -> Rust
+- [x] ProcessInteraction batch executa FSM + vector + fusion em 1 chamada
 
 ### Servico Python
 - [ ] `POST /classify-emotion` retorna vetor 6D para textos variados
@@ -695,6 +696,7 @@ controlada antes de evoluir para streaming, traces distribuidos e tuning fino.
 - Python classifier real ja esta preparado, mas ainda depende de execucao com extras `ml` e validacao E2E no ambiente alvo.
 - Trace distribuido Go -> Rust ja foi ligado via metadata gRPC (`x-trace-id`), mas o trecho completo ate Python/OpenTelemetry ainda segue pendente.
 - Transporte Go -> Rust no compose ja usa Unix socket; o listener TCP foi mantido apenas para desenvolvimento no host e compatibilidade com scripts atuais.
+- O connector Go do `emotion-engine` agora possui suite `integration` cobrindo `Ready`, as 5 RPCs e um caso real de `INVALID_ARGUMENT`; o que segue pendente e ampliar a cobertura dos outros status codes de erro.
 - Suite E2E single-agent com LLM real ainda nao foi implementada.
 
 ---

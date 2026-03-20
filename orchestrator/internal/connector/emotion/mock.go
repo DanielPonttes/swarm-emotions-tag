@@ -16,6 +16,10 @@ func NewMockClient() *MockClient {
 	return &MockClient{}
 }
 
+func (c *MockClient) Ready(context.Context) error {
+	return nil
+}
+
 func (c *MockClient) TransitionState(_ context.Context, req *connector.TransitionRequest) (*connector.TransitionResponse, error) {
 	newState := req.CurrentState
 	newState.EnteredAt = time.Now().UnixMilli()

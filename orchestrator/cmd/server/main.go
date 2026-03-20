@@ -159,6 +159,9 @@ func main() {
 	}
 
 	readyChecks = append(readyChecks, cacheClient, dbClient, llmProvider, classifierClient)
+	if checker, ok := emotionClient.(connector.ReadyChecker); ok {
+		readyChecks = append(readyChecks, checker)
+	}
 	if checker, ok := vectorStoreClient.(connector.ReadyChecker); ok {
 		readyChecks = append(readyChecks, checker)
 	}

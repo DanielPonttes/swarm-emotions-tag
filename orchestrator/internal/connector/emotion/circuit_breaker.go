@@ -68,6 +68,14 @@ func NewCircuitBreakerClient(
 	}
 }
 
+func (c *CircuitBreakerClient) Ready(ctx context.Context) error {
+	checker, ok := c.next.(connector.ReadyChecker)
+	if !ok || checker == nil {
+		return nil
+	}
+	return checker.Ready(ctx)
+}
+
 func (c *CircuitBreakerClient) TransitionState(ctx context.Context, req *connector.TransitionRequest) (*connector.TransitionResponse, error) {
 	var out *connector.TransitionResponse
 	err := c.execute(ctx, "transition_state", func() error {

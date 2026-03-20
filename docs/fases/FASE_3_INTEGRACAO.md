@@ -98,6 +98,7 @@ use opentelemetry::propagation::TextMapPropagator;
   para fluxos de desenvolvimento no host.
 - O `/ready` do orquestrador agora inclui o `emotion-engine` entre as dependencias verificadas.
 - O HTTP `request_id` do orquestrador e preservado no `context.Context`.
+- O middleware HTTP do Go agora registra `trace_id`, metodo, path, status e latencia em todos os requests.
 - O client Go injeta `x-trace-id` no metadata gRPC para todas as RPCs ao `emotion-engine`.
 - O client HTTP do classifier injeta `x-trace-id` nas chamadas ao `python-ml`.
 - O `python-ml` registra `trace_id` no log HTTP de `/classify-emotion` quando o header chega.
@@ -598,7 +599,7 @@ func TestLatency_PipelineWithoutLLM(t *testing.T) {
 
 > **Status atualizado em 2026-03-19 com base no codigo e nos testes do repositório**
 >
-> **Resumo:** classificacao Python, cache/fallback e parte da resiliencia estao implementados; a integracao gRPC Go -> Rust ja roda por Unix socket no compose, a propagacao basica de trace Go -> Rust esta ligada, e os itens de E2E/observabilidade distribuida completa ainda seguem pendentes.
+> **Resumo:** classificacao Python, cache/fallback e parte da resiliencia estao implementados; a integracao gRPC Go -> Rust ja roda por Unix socket no compose, e a correlacao basica de `request_id` ja aparece nos logs do Go, Rust e Python. Os gaps principais agora ficaram concentrados em E2E com LLM real e observabilidade via OpenTelemetry.
 
 ### Integracao gRPC
 - [x] Go conecta ao Rust via Unix domain socket
@@ -620,7 +621,7 @@ func TestLatency_PipelineWithoutLLM(t *testing.T) {
 - [ ] Latencia < 100ms (sem LLM)
 - [ ] Estado emocional evolui coerentemente em 20+ turnos
 - [ ] Modo deterministico: mesmos inputs -> mesmos estados
-- [ ] Logs com trace distribuido completo (request ID -> Go -> Rust -> Python)
+- [x] Logs com trace distribuido completo (request ID -> Go -> Rust -> Python)
 
 ### Resiliencia
 - [x] Python indisponivel -> fallback para vetor neutro (nao crash)
@@ -689,14 +690,14 @@ controlada antes de evoluir para streaming, traces distribuidos e tuning fino.
 3. Validar `GET /ready` e um `POST /api/v1/interact` com Rust/Python reais.
 4. Medir latencia por turno com `LLM_MAX_TOKENS=256`.
 5. So depois disso seguir para:
-   - logs/traces distribuidos completos ate Python/OpenTelemetry
+   - observabilidade OpenTelemetry de ponta a ponta
    - cache Redis do classifier
    - testes E2E de 20 turnos
 
 ### 3.7.4 Pendencias ainda abertas da Fase 3
 
 - Python classifier real ja esta preparado, mas ainda depende de execucao com extras `ml` e validacao E2E no ambiente alvo.
-- Trace distribuido Go -> Rust e Go -> Python ja foi ligado via `x-trace-id`, mas o trecho completo de observabilidade no Go/OpenTelemetry ainda segue pendente.
+- A correlacao basica por `x-trace-id` ja aparece nos logs do Go, Rust e Python, mas a instrumentacao completa via OpenTelemetry ainda segue pendente.
 - Transporte Go -> Rust no compose ja usa Unix socket; o listener TCP foi mantido apenas para desenvolvimento no host e compatibilidade com scripts atuais.
 - O connector Go do `emotion-engine` agora possui suite `integration` cobrindo `Ready`, as 5 RPCs e um caso real de `INVALID_ARGUMENT`; o que segue pendente e ampliar a cobertura dos outros status codes de erro.
 - Suite E2E single-agent com LLM real ainda nao foi implementada.

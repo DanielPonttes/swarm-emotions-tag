@@ -3,11 +3,11 @@ package pipeline
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/swarm-emotions/orchestrator/internal/connector"
+	"github.com/swarm-emotions/orchestrator/internal/logctx"
 	"github.com/swarm-emotions/orchestrator/internal/model"
 )
 
@@ -30,9 +30,9 @@ func (o *Orchestrator) stepPostProcess(
 	now := time.Now().UnixMilli()
 	responseEmotion, err := o.classifier.ClassifyEmotion(ctx, llmResponse)
 	if err != nil {
-		slog.Warn("failed to classify response emotion", "error", err)
+		logctx.Warn(ctx, "failed to classify response emotion", "agent_id", input.AgentID, "error", err)
 	} else {
-		measureToneCompliance(directive, responseEmotion, o.metrics)
+		measureToneCompliance(ctx, directive, responseEmotion, o.metrics)
 	}
 
 	_ = o.db.LogInteraction(ctx, &model.InteractionLog{
@@ -224,7 +224,7 @@ func evaluateL2Promotions(ctx context.Context, orchestrator *Orchestrator, agent
 			continue
 		}
 		if err := orchestrator.vectorStore.UpdateMemoryLevel(ctx, decision.MemoryID, decision.TargetLevel); err != nil {
-			slog.Warn("failed to promote memory to L3", "memory_id", decision.MemoryID, "error", err)
+			logctx.Warn(ctx, "failed to promote memory to L3", "memory_id", decision.MemoryID, "error", err)
 		}
 	}
 }

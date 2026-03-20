@@ -7,6 +7,7 @@ import (
 
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/swarm-emotions/orchestrator/internal/connector"
+	"github.com/swarm-emotions/orchestrator/internal/logctx"
 	"github.com/swarm-emotions/orchestrator/internal/model"
 	"github.com/swarm-emotions/orchestrator/internal/pipeline"
 	"github.com/swarm-emotions/orchestrator/internal/tracectx"
@@ -25,12 +26,15 @@ func (h *Handlers) Interact(w http.ResponseWriter, r *http.Request) {
 	}
 
 	traceID := chimiddleware.GetReqID(r.Context())
-	result, err := h.executeInteraction(tracectx.WithTraceID(r.Context(), traceID), req)
+	ctx := tracectx.WithTraceID(r.Context(), traceID)
+	result, err := h.executeInteraction(ctx, req)
 	if err != nil {
 		if connector.IsDependencyUnavailable(err) {
+			logctx.Warn(ctx, "interaction dependency unavailable", "agent_id", req.AgentID, "error", err)
 			respondError(w, r, http.StatusServiceUnavailable, connector.ErrDependencyUnavailable.Error())
 			return
 		}
+		logctx.Error(ctx, "interaction failed", "agent_id", req.AgentID, "error", err)
 		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -92,6 +96,7 @@ func (h *Handlers) InteractStream(w http.ResponseWriter, r *http.Request) {
 
 	result, err := streamer.ExecuteStream(streamCtx, interactionInput(req), callbacks)
 	if err != nil {
+		logctx.Error(streamCtx, "interaction stream failed", "agent_id", req.AgentID, "error", err)
 		_ = writeSSE(w, flusher, "error", map[string]any{
 			"error":      err.Error(),
 			"request_id": traceID,
@@ -107,12 +112,15 @@ func (h *Handlers) InteractStream(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) respondInteractionJSON(w http.ResponseWriter, r *http.Request, req model.InteractionRequest) {
 	traceID := chimiddleware.GetReqID(r.Context())
-	result, err := h.executeInteraction(tracectx.WithTraceID(r.Context(), traceID), req)
+	ctx := tracectx.WithTraceID(r.Context(), traceID)
+	result, err := h.executeInteraction(ctx, req)
 	if err != nil {
 		if connector.IsDependencyUnavailable(err) {
+			logctx.Warn(ctx, "interaction fallback dependency unavailable", "agent_id", req.AgentID, "error", err)
 			respondError(w, r, http.StatusServiceUnavailable, connector.ErrDependencyUnavailable.Error())
 			return
 		}
+		logctx.Error(ctx, "interaction fallback failed", "agent_id", req.AgentID, "error", err)
 		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}

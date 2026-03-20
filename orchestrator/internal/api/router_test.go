@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -144,5 +145,33 @@ func TestInteractStreamRoute(t *testing.T) {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("expected stream body to contain %q\n%s", expected, body)
 		}
+	}
+}
+
+func TestRequestLoggerIncludesTraceID(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	defer slog.SetDefault(previous)
+
+	router := newTestRouter()
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("health expected 200, got %d", rec.Code)
+	}
+
+	output := logs.String()
+	if !strings.Contains(output, "trace_id=") {
+		t.Fatalf("expected request log to include trace_id, got %q", output)
+	}
+	if !strings.Contains(output, "path=/health") {
+		t.Fatalf("expected request log to include path, got %q", output)
+	}
+	if !strings.Contains(output, "status=200") {
+		t.Fatalf("expected request log to include status, got %q", output)
 	}
 }

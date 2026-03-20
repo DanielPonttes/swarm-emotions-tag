@@ -5,6 +5,7 @@ import (
 
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/swarm-emotions/orchestrator/internal/connector"
+	"github.com/swarm-emotions/orchestrator/internal/logctx"
 	"github.com/swarm-emotions/orchestrator/internal/pipeline"
 	"github.com/swarm-emotions/orchestrator/internal/tracectx"
 )
@@ -41,6 +42,7 @@ func (h *Handlers) Ready(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if err := dependency.Ready(ctx); err != nil {
+			logctx.Warn(ctx, "dependency not ready", "error", err)
 			respondJSON(w, http.StatusServiceUnavailable, map[string]string{
 				"status": "not_ready",
 				"error":  err.Error(),

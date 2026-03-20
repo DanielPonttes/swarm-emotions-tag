@@ -145,8 +145,8 @@ No orquestrador:
 - Os contratos Protobuf estao versionados em `v1` e ja reservam faixas de campos para evolucao.
 - O codigo Go gerado a partir dos protos e versionado em `orchestrator/pkg/proto`.
 - No `docker compose`, `orchestrator` e `emotion-engine` agora se conectam por Unix domain socket compartilhado em `/var/run/emotion-engine/engine.sock`; o TCP `50051` foi mantido para desenvolvimento no host.
-- O `request_id` HTTP do orquestrador agora e propagado ao `emotion-engine` via metadata gRPC `x-trace-id`; os logs do servico Rust passam a incluir `trace_id` e `traceparent` quando presentes.
-- O mesmo `request_id` tambem e propagado ao `python-ml` via header HTTP `x-trace-id`, e o log HTTP do FastAPI passa a registrar esse valor em `/classify-emotion`.
+- O `request_id` HTTP do orquestrador agora aparece como `trace_id` nos logs HTTP do proprio servico Go e e propagado ao `emotion-engine` via metadata gRPC `x-trace-id`; os logs do servico Rust passam a incluir `trace_id` e `traceparent` quando presentes.
+- O mesmo `request_id` tambem e propagado ao `python-ml` via header HTTP `x-trace-id`, e o log HTTP do FastAPI passa a registrar esse valor em `/classify-emotion`, fechando a correlacao basica Go -> Rust -> Python.
 - O `emotion-engine` Rust ja possui implementacao real e cobertura via `cargo test`,
   `cargo clippy` e `cargo bench`.
 - O `orchestrator` Go ja possui API funcional com mocks, cobertura via `go test`

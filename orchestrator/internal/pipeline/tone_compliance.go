@@ -1,15 +1,17 @@
 package pipeline
 
 import (
-	"log/slog"
+	"context"
 
 	"github.com/swarm-emotions/orchestrator/internal/connector"
+	"github.com/swarm-emotions/orchestrator/internal/logctx"
 	"github.com/swarm-emotions/orchestrator/internal/observability"
 )
 
 const lowToneComplianceThreshold = 0.40
 
 func measureToneCompliance(
+	ctx context.Context,
 	directive EmotionRegion,
 	responseEmotion *connector.EmotionClassification,
 	metrics observability.Reporter,
@@ -31,7 +33,7 @@ func measureToneCompliance(
 	metrics.ObserveToneCompliance(directive.Name, score)
 
 	if score < lowToneComplianceThreshold {
-		slog.Warn(
+		logctx.Warn(ctx,
 			"low tone compliance",
 			"directive", directive.Name,
 			"score", score,

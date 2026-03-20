@@ -99,6 +99,8 @@ use opentelemetry::propagation::TextMapPropagator;
 - O `/ready` do orquestrador agora inclui o `emotion-engine` entre as dependencias verificadas.
 - O HTTP `request_id` do orquestrador e preservado no `context.Context`.
 - O client Go injeta `x-trace-id` no metadata gRPC para todas as RPCs ao `emotion-engine`.
+- O client HTTP do classifier injeta `x-trace-id` nas chamadas ao `python-ml`.
+- O `python-ml` registra `trace_id` no log HTTP de `/classify-emotion` quando o header chega.
 - O `emotion-engine` aplica interceptor tonic para capturar `x-trace-id`/`traceparent`
   e inclui esses campos nos spans/logs de cada RPC.
 - O pos-processamento assincrono do orquestrador preserva o mesmo `trace_id`, evitando
@@ -694,7 +696,7 @@ controlada antes de evoluir para streaming, traces distribuidos e tuning fino.
 ### 3.7.4 Pendencias ainda abertas da Fase 3
 
 - Python classifier real ja esta preparado, mas ainda depende de execucao com extras `ml` e validacao E2E no ambiente alvo.
-- Trace distribuido Go -> Rust ja foi ligado via metadata gRPC (`x-trace-id`), mas o trecho completo ate Python/OpenTelemetry ainda segue pendente.
+- Trace distribuido Go -> Rust e Go -> Python ja foi ligado via `x-trace-id`, mas o trecho completo de observabilidade no Go/OpenTelemetry ainda segue pendente.
 - Transporte Go -> Rust no compose ja usa Unix socket; o listener TCP foi mantido apenas para desenvolvimento no host e compatibilidade com scripts atuais.
 - O connector Go do `emotion-engine` agora possui suite `integration` cobrindo `Ready`, as 5 RPCs e um caso real de `INVALID_ARGUMENT`; o que segue pendente e ampliar a cobertura dos outros status codes de erro.
 - Suite E2E single-agent com LLM real ainda nao foi implementada.

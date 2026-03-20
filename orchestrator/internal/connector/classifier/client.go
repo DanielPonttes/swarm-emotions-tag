@@ -12,7 +12,10 @@ import (
 	"github.com/swarm-emotions/orchestrator/internal/connector"
 	"github.com/swarm-emotions/orchestrator/internal/model"
 	"github.com/swarm-emotions/orchestrator/internal/observability"
+	"github.com/swarm-emotions/orchestrator/internal/tracectx"
 )
+
+const traceIDHeader = "X-Trace-Id"
 
 type Client struct {
 	baseURL string
@@ -61,6 +64,7 @@ func (c *Client) Ready(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	applyTraceHeaders(req, ctx)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		c.metrics.IncDependencyError("classifier", "ready")
@@ -96,6 +100,7 @@ func (c *Client) ClassifyEmotion(ctx context.Context, text string) (*connector.E
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	applyTraceHeaders(req, ctx)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -139,5 +144,14 @@ func inferStimulus(text, label string) string {
 		return "mild_criticism"
 	default:
 		return "novelty"
+	}
+}
+
+func applyTraceHeaders(req *http.Request, ctx context.Context) {
+	if req == nil {
+		return
+	}
+	if traceID := tracectx.TraceID(ctx); traceID != "" {
+		req.Header.Set(traceIDHeader, traceID)
 	}
 }

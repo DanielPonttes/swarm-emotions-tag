@@ -3,8 +3,10 @@ package api
 import (
 	"net/http"
 
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/swarm-emotions/orchestrator/internal/connector"
 	"github.com/swarm-emotions/orchestrator/internal/pipeline"
+	"github.com/swarm-emotions/orchestrator/internal/tracectx"
 )
 
 type Handlers struct {
@@ -33,11 +35,12 @@ func (h *Handlers) Health(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (h *Handlers) Ready(w http.ResponseWriter, r *http.Request) {
+	ctx := tracectx.WithTraceID(r.Context(), chimiddleware.GetReqID(r.Context()))
 	for _, dependency := range h.ready {
 		if dependency == nil {
 			continue
 		}
-		if err := dependency.Ready(r.Context()); err != nil {
+		if err := dependency.Ready(ctx); err != nil {
 			respondJSON(w, http.StatusServiceUnavailable, map[string]string{
 				"status": "not_ready",
 				"error":  err.Error(),

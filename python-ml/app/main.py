@@ -2,12 +2,13 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
 from app.classifier import DEFAULT_MODEL_NAME, EmotionClassifier
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error")
+TRACE_ID_HEADER = "x-trace-id"
 
 
 class HealthResponse(BaseModel):
@@ -79,6 +80,21 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="EmotionML Service", version="0.1.0", lifespan=lifespan)
 
 
+@app.middleware("http")
+async def trace_logging_middleware(request: Request, call_next):
+    trace_id = request.headers.get(TRACE_ID_HEADER, "").strip()
+    logger.info(
+        "HTTP request method=%s path=%s trace_id=%s",
+        request.method,
+        request.url.path,
+        trace_id,
+    )
+    response = await call_next(request)
+    if trace_id:
+        response.headers[TRACE_ID_HEADER] = trace_id
+    return response
+
+
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
     return HealthResponse(
@@ -98,6 +114,11 @@ async def classify_emotion(req: ClassifyRequest) -> ClassifyResponse:
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
     result = _classifier.classify(req.text)
+    logger.info(
+        "Emotion classified label=%s confidence=%.4f",
+        result.label,
+        result.confidence,
+    )
     return ClassifyResponse(
         emotion_vector=result.emotion_vector,
         label=result.label,

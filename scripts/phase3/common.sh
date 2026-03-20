@@ -16,6 +16,33 @@ phase3_wait_for_ollama() {
   phase2_wait_for_http "ollama" "$base_url/api/tags" 60
 }
 
+phase3_wait_for_classifier_model() {
+  local timeout_sec="${1:-120}"
+  local started_at response
+
+  started_at="$(date +%s)"
+  while true; do
+    response="$(curl -fsS "$PYTHON_ML_URL/health")"
+    if python3 - "$response" <<'PY'
+import json
+import sys
+
+payload = json.loads(sys.argv[1])
+raise SystemExit(0 if payload.get("model_loaded") else 1)
+PY
+    then
+      return 0
+    fi
+
+    if [ "$(( $(date +%s) - started_at ))" -ge "$timeout_sec" ]; then
+      echo "timed out waiting for python-ml model to load" >&2
+      echo "$response" >&2
+      return 1
+    fi
+    sleep 2
+  done
+}
+
 phase3_require_ollama_model() {
   if ! ollama list | awk 'NR > 1 { print $1 }' | grep -Fx "$OLLAMA_MODEL_TAG" >/dev/null 2>&1; then
     echo "missing Ollama model: $OLLAMA_MODEL_TAG" >&2

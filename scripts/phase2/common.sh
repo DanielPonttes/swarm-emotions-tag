@@ -67,10 +67,17 @@ phase2_prepare_env() {
   PYTHON_ML_URL="${PYTHON_ML_URL:-http://127.0.0.1:8090}"
   PHASE2_KEEP_STACK_UP="${PHASE2_KEEP_STACK_UP:-false}"
   PHASE2_RESET_STACK="${PHASE2_RESET_STACK:-false}"
+  PHASE2_WAIT_REDIS_SEC="${PHASE2_WAIT_REDIS_SEC:-60}"
+  PHASE2_WAIT_POSTGRES_SEC="${PHASE2_WAIT_POSTGRES_SEC:-60}"
+  PHASE2_WAIT_QDRANT_SEC="${PHASE2_WAIT_QDRANT_SEC:-60}"
+  PHASE2_WAIT_EMOTION_SEC="${PHASE2_WAIT_EMOTION_SEC:-90}"
+  PHASE2_WAIT_PYTHON_SEC="${PHASE2_WAIT_PYTHON_SEC:-90}"
 
   export PHASE2_ROOT_DIR PHASE2_COMPOSE_FILE PHASE2_COMPOSE_OVERRIDE_FILE
   export HTTP_PORT ORCH_URL REDIS_ADDR POSTGRES_DSN QDRANT_ADDR QDRANT_COLLECTION
   export EMOTION_ENGINE_ADDR PYTHON_ML_URL PHASE2_KEEP_STACK_UP PHASE2_RESET_STACK
+  export PHASE2_WAIT_REDIS_SEC PHASE2_WAIT_POSTGRES_SEC PHASE2_WAIT_QDRANT_SEC
+  export PHASE2_WAIT_EMOTION_SEC PHASE2_WAIT_PYTHON_SEC
 }
 
 phase2_host_port() {
@@ -201,11 +208,11 @@ phase2_wait_for_support() {
   python_host="${lines[0]}"
   python_port="${lines[1]}"
 
-  phase2_wait_for_tcp "redis" "$redis_host" "$redis_port" 60
-  phase2_wait_for_tcp "postgres" "$postgres_host" "$postgres_port" 60
-  phase2_wait_for_http "qdrant" "http://${qdrant_host}:${qdrant_http_port}/collections" 60
-  phase2_wait_for_tcp "emotion-engine" "$emotion_host" "$emotion_port" 90
-  phase2_wait_for_http "python-ml" "http://${python_host}:${python_port}/health" 90
+  phase2_wait_for_tcp "redis" "$redis_host" "$redis_port" "$PHASE2_WAIT_REDIS_SEC"
+  phase2_wait_for_tcp "postgres" "$postgres_host" "$postgres_port" "$PHASE2_WAIT_POSTGRES_SEC"
+  phase2_wait_for_http "qdrant" "http://${qdrant_host}:${qdrant_http_port}/collections" "$PHASE2_WAIT_QDRANT_SEC"
+  phase2_wait_for_tcp "emotion-engine" "$emotion_host" "$emotion_port" "$PHASE2_WAIT_EMOTION_SEC"
+  phase2_wait_for_http "python-ml" "http://${python_host}:${python_port}/health" "$PHASE2_WAIT_PYTHON_SEC"
 }
 
 phase2_start_orchestrator() {

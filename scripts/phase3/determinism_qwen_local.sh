@@ -100,6 +100,7 @@ trap 'phase2_cleanup_orchestrator; phase2_cleanup_stack; cleanup_files' EXIT
 echo "Starting real dependencies for Phase 3 deterministic regression..."
 phase2_compose_up_support
 phase2_wait_for_support
+phase3_wait_for_classifier_model "${PHASE3_CLASSIFIER_READY_TIMEOUT_SEC:-120}"
 
 echo "Waiting for local Ollama..."
 phase3_wait_for_ollama

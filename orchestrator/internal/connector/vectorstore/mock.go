@@ -29,9 +29,9 @@ func (c *MockClient) QuerySemantic(_ context.Context, params connector.QuerySema
 	c.mu.RUnlock()
 
 	hits := make([]model.MemoryHit, 0, len(stored)+2)
-	queryVector := textEmbedding(params.Text, 6)
+	queryVector := textEmbedding(params.Text, semanticVectorSize)
 	for _, memory := range stored {
-		score := cosineSimilarity(queryVector, blendVectors(textEmbedding(memory.Content, 6), ensureDimension(memory.Emotion.Components, 6)))
+		score := cosineSimilarity(queryVector, textEmbedding(memory.Content, semanticVectorSize))
 		hits = append(hits, model.MemoryHit{
 			PointID:           pointIDForMemory(memory),
 			MemoryID:          memory.MemoryID,
@@ -77,9 +77,9 @@ func (c *MockClient) QueryEmotional(_ context.Context, params connector.QueryEmo
 	c.mu.RUnlock()
 
 	hits := make([]model.MemoryHit, 0, len(stored)+2)
-	queryVector := ensureDimension(params.EmotionVector.Components, 6)
+	queryVector := ensureDimension(params.EmotionVector.Components, emotionalVectorSize)
 	for _, memory := range stored {
-		score := cosineSimilarity(queryVector, blendVectors(textEmbedding(memory.Content, 6), ensureDimension(memory.Emotion.Components, 6)))
+		score := cosineSimilarity(queryVector, ensureDimension(memory.Emotion.Components, emotionalVectorSize))
 		hits = append(hits, model.MemoryHit{
 			PointID:           pointIDForMemory(memory),
 			MemoryID:          memory.MemoryID,

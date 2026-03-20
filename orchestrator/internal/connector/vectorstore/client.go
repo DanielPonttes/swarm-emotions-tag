@@ -22,7 +22,13 @@ import (
 	"github.com/swarm-emotions/orchestrator/internal/resilience"
 )
 
-const defaultCollection = "memories"
+const (
+	defaultCollection   = "agent_memories"
+	semanticVectorName  = "semantic"
+	emotionalVectorName = "emotional"
+	semanticVectorSize  = 768
+	emotionalVectorSize = 6
+)
 
 type Client struct {
 	baseURL    string
@@ -33,6 +39,7 @@ type Client struct {
 }
 
 type searchRequest struct {
+	VectorName  string        `json:"vector_name,omitempty"`
 	Vector      []float32     `json:"vector"`
 	Limit       int           `json:"limit"`
 	WithPayload bool          `json:"with_payload"`
@@ -82,6 +89,11 @@ type searchPoint struct {
 	ID      any            `json:"id"`
 	Score   float64        `json:"score"`
 	Payload map[string]any `json:"payload"`
+}
+
+type payloadIndexSpec struct {
+	FieldName   string
+	FieldSchema string
 }
 
 func NewClient(addr, collection string) (*Client, error) {
@@ -151,12 +163,12 @@ func (c *Client) SetMetricsReporter(reporter observability.Reporter) {
 }
 
 func (c *Client) QuerySemantic(ctx context.Context, params connector.QuerySemanticParams) ([]model.MemoryHit, error) {
-	vector := textEmbedding(params.Text, 6)
+	vector := textEmbedding(params.Text, semanticVectorSize)
 	return c.search(ctx, vector, params.AgentID, normalizeSearchLimit(params.TopK), true)
 }
 
 func (c *Client) QueryEmotional(ctx context.Context, params connector.QueryEmotionalParams) ([]model.MemoryHit, error) {
-	vector := ensureDimension(params.EmotionVector.Components, 6)
+	vector := ensureDimension(params.EmotionVector.Components, emotionalVectorSize)
 	return c.search(ctx, vector, params.AgentID, normalizeSearchLimit(params.TopK), false)
 }
 
@@ -183,8 +195,11 @@ func (c *Client) UpsertMemory(ctx context.Context, memory model.StoredMemory) er
 	payload, err := json.Marshal(map[string]any{
 		"points": []map[string]any{
 			{
-				"id":     pointIDForMemory(memory),
-				"vector": blendVectors(textEmbedding(memory.Content, 6), ensureDimension(memory.Emotion.Components, 6)),
+				"id": pointIDForMemory(memory),
+				"vector": map[string]any{
+					semanticVectorName:  textEmbedding(memory.Content, semanticVectorSize),
+					emotionalVectorName: ensureDimension(memory.Emotion.Components, emotionalVectorSize),
+				},
 				"payload": map[string]any{
 					"agent_id":           memory.AgentID,
 					"memory_id":          memory.MemoryID,
@@ -439,6 +454,11 @@ func (c *Client) search(ctx context.Context, vector []float32, agentID string, l
 		Limit:       normalizeSearchLimit(limit),
 		WithPayload: true,
 	}
+	if semantic {
+		reqBody.VectorName = semanticVectorName
+	} else {
+		reqBody.VectorName = emotionalVectorName
+	}
 	if agentID != "" {
 		reqBody.Filter = &qdrantFilter{
 			Must: []qdrantCondition{
@@ -624,8 +644,14 @@ func (c *Client) deletePoints(ctx context.Context, pointIDs []string) error {
 func (c *Client) ensureCollection(ctx context.Context) error {
 	payload := map[string]any{
 		"vectors": map[string]any{
-			"size":     6,
-			"distance": "Cosine",
+			semanticVectorName: map[string]any{
+				"size":     semanticVectorSize,
+				"distance": "Cosine",
+			},
+			emotionalVectorName: map[string]any{
+				"size":     emotionalVectorSize,
+				"distance": "Cosine",
+			},
 		},
 	}
 	body, err := json.Marshal(payload)
@@ -633,7 +659,7 @@ func (c *Client) ensureCollection(ctx context.Context) error {
 		return err
 	}
 
-	return resilience.Do(ctx, c.retry, func(attemptCtx context.Context) error {
+	err = resilience.Do(ctx, c.retry, func(attemptCtx context.Context) error {
 		callCtx, cancel := context.WithTimeout(attemptCtx, 350*time.Millisecond)
 		defer cancel()
 		req, err := http.NewRequestWithContext(
@@ -654,7 +680,66 @@ func (c *Client) ensureCollection(ctx context.Context) error {
 		defer resp.Body.Close()
 		if resp.StatusCode >= 400 {
 			data, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-			return fmt.Errorf("ensure qdrant collection failed with %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+			message := strings.TrimSpace(string(data))
+			if strings.Contains(strings.ToLower(message), "already exists") {
+				return nil
+			}
+			return fmt.Errorf("ensure qdrant collection failed with %d: %s", resp.StatusCode, message)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return c.ensurePayloadIndexes(ctx)
+}
+
+func (c *Client) ensurePayloadIndexes(ctx context.Context) error {
+	indexes := []payloadIndexSpec{
+		{FieldName: "agent_id", FieldSchema: "keyword"},
+		{FieldName: "memory_level", FieldSchema: "integer"},
+		{FieldName: "intensity", FieldSchema: "float"},
+		{FieldName: "created_at", FieldSchema: "integer"},
+	}
+	for _, index := range indexes {
+		if err := c.createPayloadIndex(ctx, index); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *Client) createPayloadIndex(ctx context.Context, index payloadIndexSpec) error {
+	payload, err := json.Marshal(map[string]any{
+		"field_name":   index.FieldName,
+		"field_schema": index.FieldSchema,
+	})
+	if err != nil {
+		return err
+	}
+
+	return resilience.Do(ctx, c.retry, func(attemptCtx context.Context) error {
+		callCtx, cancel := context.WithTimeout(attemptCtx, 350*time.Millisecond)
+		defer cancel()
+		url := fmt.Sprintf("%s/collections/%s/index?wait=true", c.baseURL, c.collection)
+		req, err := http.NewRequestWithContext(callCtx, http.MethodPut, url, bytes.NewReader(payload))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.http.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode >= 400 {
+			data, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+			message := strings.TrimSpace(string(data))
+			if strings.Contains(strings.ToLower(message), "already exists") {
+				return nil
+			}
+			return fmt.Errorf("ensure qdrant payload index failed with %d: %s", resp.StatusCode, message)
 		}
 		return nil
 	})

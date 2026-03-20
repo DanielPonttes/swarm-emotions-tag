@@ -14,6 +14,8 @@ help:
 	@echo "  make docker-up     - Sobe todos os servicos via docker compose"
 	@echo "  make docker-down   - Para todos os servicos"
 	@echo "  make docker-infra  - Sobe apenas Qdrant, PostgreSQL e Redis"
+	@echo "  make docker-install-ubuntu - Instala Docker Engine oficial no Ubuntu"
+	@echo "  make qdrant-up     - Sobe apenas o Qdrant e aguarda readiness"
 	@echo "  make test-go-integration - Roda integracao real dos connectors Go"
 	@echo "  make phase2-smoke-real   - Smoke test local do /interact com deps reais"
 	@echo "  make phase2-stability-real - Carga longa com pprof para fechar a Fase 2"
@@ -72,7 +74,7 @@ proto-gen-go:
 proto-gen-rust:
 	cd emotion-engine && cargo check
 
-.PHONY: docker-up docker-down docker-infra docker-build
+.PHONY: docker-up docker-down docker-infra docker-build docker-install-ubuntu qdrant-up
 docker-up:
 	docker compose up -d --build
 
@@ -84,6 +86,12 @@ docker-infra:
 
 docker-build:
 	docker compose build
+
+docker-install-ubuntu:
+	./scripts/setup_docker_ubuntu.sh
+
+qdrant-up:
+	./scripts/up_qdrant.sh
 
 .PHONY: phase2-smoke-real phase2-stability-real
 phase2-smoke-real:

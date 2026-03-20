@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +19,57 @@ import (
 	"github.com/swarm-emotions/orchestrator/internal/model"
 	"github.com/swarm-emotions/orchestrator/internal/testutil"
 )
+
+func TestClientIntegration_EnsureCollectionCreatesNamedVectorsAndPayloadIndexes(t *testing.T) {
+	rawQdrantAddr := testutil.EnvOrDefault("QDRANT_ADDR", "127.0.0.1:6333")
+	hostPort, err := testutil.ExtractHostPort(rawQdrantAddr, "6333")
+	if err != nil {
+		t.Fatalf("extract qdrant host: %v", err)
+	}
+	if strings.HasSuffix(hostPort, ":6334") {
+		hostPort = strings.TrimSuffix(hostPort, ":6334") + ":6333"
+	}
+	testutil.RequireTCP(t, hostPort)
+
+	collection := testutil.UniqueID("it-qdrant-schema")
+	if _, err := vectorstore.NewClient(rawQdrantAddr, collection); err != nil {
+		t.Fatalf("new vectorstore client: %v", err)
+	}
+
+	info, err := getCollectionInfo("http://"+hostPort, collection)
+	if err != nil {
+		t.Fatalf("get collection info: %v", err)
+	}
+
+	vectors, ok := nestedMap(info, "result", "config", "params", "vectors")
+	if !ok {
+		t.Fatalf("expected named vectors in collection config, got %#v", info)
+	}
+	semantic, ok := nestedMap(vectors, "semantic")
+	if !ok {
+		t.Fatalf("expected semantic named vector, got %#v", vectors)
+	}
+	if got := int(readFloat64(semantic["size"])); got != 768 {
+		t.Fatalf("expected semantic vector size 768, got %d", got)
+	}
+	emotional, ok := nestedMap(vectors, "emotional")
+	if !ok {
+		t.Fatalf("expected emotional named vector, got %#v", vectors)
+	}
+	if got := int(readFloat64(emotional["size"])); got != 6 {
+		t.Fatalf("expected emotional vector size 6, got %d", got)
+	}
+
+	payloadSchema, ok := nestedMap(info, "result", "payload_schema")
+	if !ok {
+		t.Fatalf("expected payload schema to be present, got %#v", info)
+	}
+	for _, field := range []string{"agent_id", "memory_level", "intensity", "created_at"} {
+		if _, ok := payloadSchema[field]; !ok {
+			t.Fatalf("expected payload index for %q, got %#v", field, payloadSchema)
+		}
+	}
+}
 
 func TestClientIntegration_QuerySemanticAndEmotional(t *testing.T) {
 	rawQdrantAddr := testutil.EnvOrDefault("QDRANT_ADDR", "127.0.0.1:6333")
@@ -36,48 +88,42 @@ func TestClientIntegration_QuerySemanticAndEmotional(t *testing.T) {
 		t.Fatalf("new vectorstore client: %v", err)
 	}
 
-	baseURL := "http://" + hostPort
 	agentID := testutil.UniqueID("agent-it-qdrant")
 	otherAgentID := testutil.UniqueID("agent-other")
-	if err := upsertPoints(baseURL, collection, []map[string]any{
+	for _, memory := range []model.StoredMemory{
 		{
-			"id":     "p1",
-			"vector": []float32{0.8, 0.1, 0.0, 0.1, 0.0, 0.0},
-			"payload": map[string]any{
-				"agent_id":           agentID,
-				"memory_id":          "mem-1",
-				"content":            "deadline discussion",
-				"cognitive_score":    0.42,
-				"memory_level":       2,
-				"is_pseudopermanent": true,
-			},
+			MemoryID:          "mem-1",
+			AgentID:           agentID,
+			Content:           "deadline discussion",
+			CognitiveScore:    0.42,
+			MemoryLevel:       2,
+			IsPseudopermanent: true,
+			Emotion:           model.EmotionVector{Components: []float32{0.1, 0.3, 0.2, 0, 0, 0}},
+			CreatedAtMs:       time.Now().Add(-2 * time.Hour).UnixMilli(),
 		},
 		{
-			"id":     "p2",
-			"vector": []float32{0.3, 0.2, 0.1, 0.2, 0.1, 0.1},
-			"payload": map[string]any{
-				"agent_id":           agentID,
-				"memory_id":          "mem-2",
-				"content":            "team planning context",
-				"cognitive_score":    0.21,
-				"memory_level":       1,
-				"is_pseudopermanent": false,
-			},
+			MemoryID:       "mem-2",
+			AgentID:        agentID,
+			Content:        "team planning context",
+			CognitiveScore: 0.21,
+			MemoryLevel:    1,
+			Emotion:        model.EmotionVector{Components: []float32{0.2, 0.1, 0.1, 0.1, 0, 0.2}},
+			CreatedAtMs:    time.Now().Add(-time.Hour).UnixMilli(),
 		},
 		{
-			"id":     "p-other",
-			"vector": []float32{0.8, 0.1, 0.0, 0.1, 0.0, 0.0},
-			"payload": map[string]any{
-				"agent_id":           otherAgentID,
-				"memory_id":          "mem-other",
-				"content":            "foreign agent memory",
-				"cognitive_score":    0.9,
-				"memory_level":       3,
-				"is_pseudopermanent": true,
-			},
+			MemoryID:          "mem-other",
+			AgentID:           otherAgentID,
+			Content:           "foreign agent memory",
+			CognitiveScore:    0.9,
+			MemoryLevel:       3,
+			IsPseudopermanent: true,
+			Emotion:           model.EmotionVector{Components: []float32{0.7, 0.1, 0, 0, 0, 0}},
+			CreatedAtMs:       time.Now().UnixMilli(),
 		},
-	}); err != nil {
-		t.Fatalf("upsert points: %v", err)
+	} {
+		if err := client.UpsertMemory(context.Background(), memory); err != nil {
+			t.Fatalf("upsert memory %s: %v", memory.MemoryID, err)
+		}
 	}
 
 	ctx := context.Background()
@@ -371,6 +417,13 @@ func TestClientIntegration_DeleteStaleMemoriesRemovesExpiredL2Only(t *testing.T)
 	if len(deleted) != 2 {
 		t.Fatalf("expected 2 deleted memories, got %d (%#v)", len(deleted), deleted)
 	}
+	deletedIDs := []string{deleted[0].MemoryID, deleted[1].MemoryID}
+	slices.Sort(deletedIDs)
+	expectedDeletedIDs := []string{memories[0].MemoryID, memories[1].MemoryID}
+	slices.Sort(expectedDeletedIDs)
+	if !slices.Equal(deletedIDs, expectedDeletedIDs) {
+		t.Fatalf("expected deleted ids %v, got %v", expectedDeletedIDs, deletedIDs)
+	}
 
 	l2AgentA, err := client.GetMemoriesByLevel(ctx, agentA, 2, 10)
 	if err != nil {
@@ -398,6 +451,22 @@ func TestClientIntegration_DeleteStaleMemoriesRemovesExpiredL2Only(t *testing.T)
 	if findStoredMemory(l3AgentA, memories[3].MemoryID) == nil {
 		t.Fatalf("expected L3 memory to remain after GC")
 	}
+
+	semanticHits, err := waitForSemanticHits(ctx, client, agentA)
+	if err != nil {
+		t.Fatalf("semantic query after GC: %v", err)
+	}
+	if containsMemory(semanticHits, memories[0].MemoryID) {
+		t.Fatalf("expected deleted memory %q to disappear from semantic results", memories[0].MemoryID)
+	}
+
+	emotionalHits, err := waitForEmotionalHits(ctx, client, agentA)
+	if err != nil {
+		t.Fatalf("emotional query after GC: %v", err)
+	}
+	if containsMemory(emotionalHits, memories[0].MemoryID) {
+		t.Fatalf("expected deleted memory %q to disappear from emotional results", memories[0].MemoryID)
+	}
 }
 
 func upsertPoints(baseURL, collection string, points []map[string]any) error {
@@ -424,6 +493,29 @@ func upsertPoints(baseURL, collection string, points []map[string]any) error {
 		return fmt.Errorf("qdrant upsert failed with %d: %s", resp.StatusCode, strings.TrimSpace(string(payload)))
 	}
 	return nil
+}
+
+func getCollectionInfo(baseURL, collection string) (map[string]any, error) {
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/collections/%s", baseURL, collection), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		payload, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return nil, fmt.Errorf("qdrant collection info failed with %d: %s", resp.StatusCode, strings.TrimSpace(string(payload)))
+	}
+
+	var decoded map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		return nil, err
+	}
+	return decoded, nil
 }
 
 func waitForSemanticHits(ctx context.Context, client *vectorstore.Client, agentID string) ([]model.MemoryHit, error) {
@@ -493,4 +585,35 @@ func findStoredMemory(memories []model.StoredMemory, memoryID string) *model.Sto
 		}
 	}
 	return nil
+}
+
+func nestedMap(root map[string]any, path ...string) (map[string]any, bool) {
+	current := root
+	for idx, key := range path {
+		value, ok := current[key]
+		if !ok {
+			return nil, false
+		}
+		if idx == len(path)-1 {
+			next, ok := value.(map[string]any)
+			return next, ok
+		}
+		next, ok := value.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		current = next
+	}
+	return nil, false
+}
+
+func readFloat64(value any) float64 {
+	switch typed := value.(type) {
+	case float64:
+		return typed
+	case int:
+		return float64(typed)
+	default:
+		return 0
+	}
 }

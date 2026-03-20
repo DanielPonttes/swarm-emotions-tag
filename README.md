@@ -46,6 +46,43 @@ Para subir tudo:
 make docker-up
 ```
 
+## Docker no Ubuntu 24.04
+
+Se o host ainda nao tiver Docker, o repositório agora inclui um bootstrap para
+Ubuntu:
+
+```bash
+./scripts/setup_docker_ubuntu.sh
+```
+
+Esse script instala o Docker Engine oficial, o plugin `docker compose`,
+habilita o servico e adiciona o usuario atual ao grupo `docker`.
+
+Depois, abra um shell novo ou rode `newgrp docker` e valide:
+
+```bash
+docker --version
+docker compose version
+docker ps
+```
+
+## Qdrant local
+
+Para subir apenas o Qdrant e aguardar o endpoint HTTP ficar pronto:
+
+```bash
+./scripts/up_qdrant.sh
+```
+
+Ou via `make`:
+
+```bash
+make qdrant-up
+```
+
+O script usa `docker compose up -d qdrant` e espera resposta em
+`http://127.0.0.1:6333/collections`.
+
 ## LLM real local (Qwen3.5-27B)
 
 O orquestrador agora aceita provider `openai-compatible`, adequado para servir

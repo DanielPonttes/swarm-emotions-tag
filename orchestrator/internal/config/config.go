@@ -40,7 +40,7 @@ func Load() Config {
 		HTTPPort:                  getEnv("HTTP_PORT", "8080"),
 		EmotionEngineAddr:         getEnv("EMOTION_ENGINE_ADDR", "localhost:50051"),
 		QdrantAddr:                getEnv("QDRANT_ADDR", "localhost:6333"),
-		QdrantCollection:          getEnv("QDRANT_COLLECTION", "memories"),
+		QdrantCollection:          getEnv("QDRANT_COLLECTION", "agent_memories"),
 		RedisAddr:                 getEnv("REDIS_ADDR", "localhost:6379"),
 		PostgresDSN:               getEnv("POSTGRES_DSN", "postgres://emotionrag:dev_password_change_me@localhost:5433/emotionrag?sslmode=disable"),
 		PythonMLURL:               getEnv("PYTHON_ML_URL", "http://localhost:8090"),

@@ -258,6 +258,9 @@ phase3_wait_for_postgres_count() {
 phase3_sleep_for_state_constraints() {
   local state="$1"
   case "$state" in
+    anxious)
+      sleep 1.1
+      ;;
     frustrated)
       sleep 1.6
       ;;

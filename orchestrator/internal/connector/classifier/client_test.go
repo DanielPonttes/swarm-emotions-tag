@@ -64,3 +64,32 @@ func TestClientReadyFailsWhenModelIsNotLoaded(t *testing.T) {
 		t.Fatalf("unexpected ready error: %v", err)
 	}
 }
+
+func TestInferStimulusExpandedCoverage(t *testing.T) {
+	testCases := []struct {
+		name     string
+		text     string
+		label    string
+		expected string
+	}{
+		{name: "urgency from text", text: "This is urgent, please handle asap", label: "neutral", expected: "urgency"},
+		{name: "resolution from text", text: "The issue is fixed now and resolved", label: "neutral", expected: "resolution"},
+		{name: "success from text", text: "It worked, success confirmed", label: "neutral", expected: "success"},
+		{name: "empathy from text", text: "I understand this is hard, sorry this happened", label: "neutral", expected: "empathy"},
+		{name: "user frustration from text", text: "I'm frustrated and stuck again", label: "neutral", expected: "user_frustration"},
+		{name: "boredom from text", text: "This is getting boring and repetitive", label: "neutral", expected: "boredom"},
+		{name: "severe criticism from text", text: "This rollout is unacceptable and terrible", label: "neutral", expected: "severe_criticism"},
+		{name: "mild criticism from label", text: "I am disappointed with this answer", label: "disappointment", expected: "mild_criticism"},
+		{name: "empathy from label", text: "neutral text", label: "caring", expected: "empathy"},
+		{name: "resolution from label", text: "neutral text", label: "relief", expected: "resolution"},
+		{name: "novelty from curiosity label", text: "neutral text", label: "curiosity", expected: "novelty"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := inferStimulus(tc.text, tc.label); got != tc.expected {
+				t.Fatalf("expected %q, got %q", tc.expected, got)
+			}
+		})
+	}
+}

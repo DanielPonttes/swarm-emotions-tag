@@ -130,14 +130,32 @@ func inferStimulus(text, label string) string {
 	lowered := strings.ToLower(text)
 	normalizedLabel := strings.ToLower(strings.TrimSpace(label))
 	switch {
-	case strings.Contains(lowered, "urgent") || strings.Contains(lowered, "asap"):
+	case containsAny(lowered, "urgent", "asap", "immediately", "right now", "deadline", "blocker", "sev1", "p1"):
 		return "urgency"
-	case strings.Contains(lowered, "thanks") || strings.Contains(lowered, "great"):
+	case containsAny(lowered, "resolved", "fixed", "solved", "working now", "works now", "all good now", "issue is gone"):
+		return "resolution"
+	case containsAny(lowered, "success", "worked", "it works", "passou", "passed", "completed successfully", "done successfully"):
+		return "success"
+	case containsAny(lowered, "i understand", "understand this is hard", "that sounds hard", "sorry you're dealing with this", "sorry this happened", "take your time"):
+		return "empathy"
+	case containsAny(lowered, "i'm frustrated", "im frustrated", "frustrated again", "this is frustrating", "i'm annoyed", "im annoyed", "stuck again"):
+		return "user_frustration"
+	case containsAny(lowered, "boring", "repetitive", "same thing again", "nothing new", "stale"):
+		return "boredom"
+	case containsAny(lowered, "unacceptable", "terrible", "awful", "horrible", "disaster", "catastrophic"):
+		return "severe_criticism"
+	case containsAny(lowered, "thanks", "thank you", "great", "appreciate", "grateful", "nice work"):
 		return "praise"
-	case strings.Contains(lowered, "problem") || strings.Contains(lowered, "wrong"):
+	case containsAny(lowered, "problem", "wrong", "failed", "mistake", "broken", "error"):
 		return "failure"
 	case normalizedLabel == "gratitude" || normalizedLabel == "admiration" || normalizedLabel == "approval" || normalizedLabel == "joy" || normalizedLabel == "optimism" || normalizedLabel == "excitement":
 		return "praise"
+	case normalizedLabel == "caring":
+		return "empathy"
+	case normalizedLabel == "relief" || normalizedLabel == "realization":
+		return "resolution"
+	case normalizedLabel == "surprise" || normalizedLabel == "curiosity":
+		return "novelty"
 	case normalizedLabel == "fear" || normalizedLabel == "nervousness" || normalizedLabel == "confusion":
 		return "urgency"
 	case normalizedLabel == "anger" || normalizedLabel == "annoyance" || normalizedLabel == "disappointment" || normalizedLabel == "disapproval" || normalizedLabel == "sadness" || normalizedLabel == "grief":
@@ -145,6 +163,15 @@ func inferStimulus(text, label string) string {
 	default:
 		return "novelty"
 	}
+}
+
+func containsAny(text string, patterns ...string) bool {
+	for _, pattern := range patterns {
+		if pattern != "" && strings.Contains(text, pattern) {
+			return true
+		}
+	}
+	return false
 }
 
 func applyTraceHeaders(req *http.Request, ctx context.Context) {

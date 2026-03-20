@@ -597,7 +597,7 @@ func TestLatency_PipelineWithoutLLM(t *testing.T) {
 
 ## 3.5 Checklist de Aceitacao
 
-> **Status atualizado em 2026-03-19 com base no codigo e nos testes do repositório**
+> **Status atualizado em 2026-03-20 com base no codigo e nos testes do repositório**
 >
 > **Resumo:** classificacao Python, cache/fallback e parte da resiliencia estao implementados; a integracao gRPC Go -> Rust ja roda por Unix socket no compose, a correlacao basica de `request_id` ja aparece nos logs do Go, Rust e Python, e o pipeline E2E com LLM real foi validado localmente com `ollama-native` + `Qwen/Qwen3.5-27B`. Os gaps principais agora ficaram concentrados em automacao E2E longa e observabilidade via OpenTelemetry.
 
@@ -609,7 +609,7 @@ func TestLatency_PipelineWithoutLLM(t *testing.T) {
 - [x] ProcessInteraction batch executa FSM + vector + fusion em 1 chamada
 
 ### Servico Python
-- [ ] `POST /classify-emotion` retorna vetor 6D para textos variados
+- [x] `POST /classify-emotion` retorna vetor 6D para textos variados
 - [x] Health check indica modelo carregado
 - [x] Readiness probe funcional (Go espera Python estar pronto)
 - [x] Cache Redis de classificacoes funcional (hit ratio > 0 em testes)
@@ -683,6 +683,10 @@ inicial em `Qwen/Qwen3.5-27B`, sem bloquear o restante do pipeline E2E.
   - cenarios isolados para `urgency`, `mild_criticism`, `severe_criticism`, `success`, `resolution`, `empathy`, `user_frustration` e `boredom`
   - transicoes reais de FSM em agentes limpos contra Python + Rust + Qwen local
   - consistencia entre `/state`, `/history`, Redis e Postgres em cada rota exercitada
+- Suite `make phase3-transformers-qwen-local` validando:
+  - rebuild do `python-ml` com extras `ml` e `CLASSIFIER_MODE=transformers`
+  - `POST /classify-emotion` com vetores 6D e labels variados em textos reais
+  - matriz comportamental completa da Fase 3 com classifier real + Qwen local
 - Suite `integration` do connector `emotion` ampliada para validar:
   - `Ready` + 5 RPCs com status reais `INVALID_ARGUMENT`, `UNAVAILABLE`, `PERMISSION_DENIED`, `RESOURCE_EXHAUSTED`, `UNAUTHENTICATED`, `DEADLINE_EXCEEDED` e `INTERNAL`
   - mapeamento do circuit breaker para `dependency_unavailable` apenas nos codigos transitorios
@@ -717,12 +721,12 @@ controlada antes de evoluir para streaming, traces distribuidos e tuning fino.
 
 ### 3.7.4 Pendencias ainda abertas da Fase 3
 
-- Python classifier real ja esta preparado, mas ainda depende de execucao com extras `ml` e validacao E2E no ambiente alvo.
+- Python classifier real ja foi validado localmente com extras `ml` em CPU; o que ainda falta e repetir essa validacao no ambiente alvo final e decidir o perfil operacional de inferencia.
 - A correlacao basica por `x-trace-id` ja aparece nos logs do Go, Rust e Python, mas a instrumentacao completa via OpenTelemetry ainda segue pendente.
 - O fluxo validado com Ollama local atualmente roda de forma mais direta com `orchestrator` no host; manter `orchestrator` no compose e o modelo no host ainda depende de conectividade da bridge Docker ate `11434`.
 - Transporte Go -> Rust no compose ja usa Unix socket; o listener TCP foi mantido apenas para desenvolvimento no host e compatibilidade com scripts atuais.
 - O connector Go do `emotion-engine` agora possui suite `integration` cobrindo `Ready`, as 5 RPCs, codigos reais de erro e o mapeamento transitorio do circuit breaker; o que ainda falta e ampliar validacao com OpenTelemetry real e o classifier `transformers` no ambiente alvo.
-- Existem smoke E2E, suite multi-turno, regressao deterministica e matriz comportamental local com Qwen via `make phase3-smoke-qwen-local`, `make phase3-multiturn-qwen-local`, `make phase3-determinism-qwen-local` e `make phase3-behavioral-qwen-local`; o que ainda falta e ampliar a cobertura com classifier real e cenarios de carga sem LLM.
+- Existem smoke E2E, suite multi-turno, regressao deterministica, matriz comportamental e validacao com classifier `transformers` local via `make phase3-smoke-qwen-local`, `make phase3-multiturn-qwen-local`, `make phase3-determinism-qwen-local`, `make phase3-behavioral-qwen-local` e `make phase3-transformers-qwen-local`; o que ainda falta e ampliar cenarios de carga sem LLM e instrumentacao OpenTelemetry real.
 
 ---
 

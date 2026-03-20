@@ -164,6 +164,17 @@ Esse alvo valida cenarios isolados como `urgency -> anxious`,
 `frustrated -> calm` via `resolution`, `calm -> neutral` via `boredom` e
 `empathetic -> anxious` via `user_frustration`.
 
+Para validar o mesmo pipeline com o classifier Python real em modo
+`transformers`, existe um alvo dedicado:
+
+```bash
+make phase3-transformers-qwen-local
+```
+
+Esse alvo rebuilda o `python-ml` com `PYTHON_ML_INSTALL_EXTRAS=ml`,
+aguarda `model_loaded=true`, valida `POST /classify-emotion` com textos variados
+e depois roda a matriz comportamental completa com Qwen local.
+
 Observacao importante: neste host, o caminho validado foi `Ollama no host` +
 `orchestrator no host` + dependencias reais em Docker (`emotion-engine`,
 `python-ml`, Redis, Postgres e Qdrant). Rodar o `orchestrator` no compose e o

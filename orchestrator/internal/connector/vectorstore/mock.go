@@ -39,6 +39,7 @@ func (c *MockClient) QuerySemantic(_ context.Context, params connector.QuerySema
 			CognitiveScore:    memory.CognitiveScore,
 			MemoryLevel:       memory.MemoryLevel,
 			IsPseudopermanent: memory.IsPseudopermanent,
+			CreatedAtMs:       memory.CreatedAtMs,
 		})
 	}
 
@@ -84,6 +85,7 @@ func (c *MockClient) QueryEmotional(_ context.Context, params connector.QueryEmo
 			CognitiveScore:    memory.CognitiveScore,
 			MemoryLevel:       memory.MemoryLevel,
 			IsPseudopermanent: memory.IsPseudopermanent,
+			CreatedAtMs:       memory.CreatedAtMs,
 		})
 	}
 

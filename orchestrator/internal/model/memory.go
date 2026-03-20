@@ -8,6 +8,7 @@ type MemoryHit struct {
 	CognitiveScore    float32 `json:"cognitive_score"`
 	MemoryLevel       uint32  `json:"memory_level"`
 	IsPseudopermanent bool    `json:"is_pseudopermanent"`
+	CreatedAtMs       int64   `json:"created_at_ms"`
 }
 
 type ScoreCandidate struct {

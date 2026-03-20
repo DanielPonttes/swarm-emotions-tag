@@ -149,16 +149,24 @@ func TestClientIntegration_UpsertMemoryMakesPromotedMemoryQueryable(t *testing.T
 	if err != nil {
 		t.Fatalf("semantic query after upsert: %v", err)
 	}
-	if !containsMemory(semanticHits, memory.MemoryID) {
+	semanticHit := findMemory(semanticHits, memory.MemoryID)
+	if semanticHit == nil {
 		t.Fatalf("expected semantic hits to include promoted memory %q, got %#v", memory.MemoryID, semanticHits)
+	}
+	if semanticHit.CreatedAtMs != memory.CreatedAtMs {
+		t.Fatalf("expected created_at to round-trip in semantic hits, got %d want %d", semanticHit.CreatedAtMs, memory.CreatedAtMs)
 	}
 
 	emotionalHits, err := waitForEmotionalHits(ctx, client, agentID)
 	if err != nil {
 		t.Fatalf("emotional query after upsert: %v", err)
 	}
-	if !containsMemory(emotionalHits, memory.MemoryID) {
+	emotionalHit := findMemory(emotionalHits, memory.MemoryID)
+	if emotionalHit == nil {
 		t.Fatalf("expected emotional hits to include promoted memory %q, got %#v", memory.MemoryID, emotionalHits)
+	}
+	if emotionalHit.CreatedAtMs != memory.CreatedAtMs {
+		t.Fatalf("expected created_at to round-trip in emotional hits, got %d want %d", emotionalHit.CreatedAtMs, memory.CreatedAtMs)
 	}
 }
 
@@ -237,4 +245,13 @@ func containsMemory(hits []model.MemoryHit, memoryID string) bool {
 		}
 	}
 	return false
+}
+
+func findMemory(hits []model.MemoryHit, memoryID string) *model.MemoryHit {
+	for i := range hits {
+		if hits[i].MemoryID == memoryID {
+			return &hits[i]
+		}
+	}
+	return nil
 }

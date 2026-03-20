@@ -571,9 +571,9 @@ func TestDecayReducesScoreOverTime(t *testing.T) {
 - [ ] Promocao L2->L3 por avaliacao (Rust) funcional
 
 ### Decaimento
-- [ ] Decaimento lazy aplicado no query-time
-- [ ] L3 decai 100x mais lento que L1
-- [ ] Re-ordenacao apos decaimento mantida
+- [x] Decaimento lazy aplicado no query-time
+- [x] L3 decai 100x mais lento que L1
+- [x] Re-ordenacao apos decaimento mantida
 
 ### GC
 - [ ] GC periodico remove memorias L2 expiradas

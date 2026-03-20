@@ -266,6 +266,7 @@ func (c *Client) search(ctx context.Context, vector []float32, agentID string, l
 				CognitiveScore:    readFloat32(point.Payload["cognitive_score"]),
 				MemoryLevel:       readUint32(point.Payload["memory_level"]),
 				IsPseudopermanent: readBool(point.Payload["is_pseudopermanent"]),
+				CreatedAtMs:       readInt64(point.Payload["created_at"]),
 			}
 			if hit.MemoryID == "" {
 				continue
@@ -504,6 +505,27 @@ func readUint32(value any) uint32 {
 			return 0
 		}
 		return uint32(typed)
+	default:
+		return 0
+	}
+}
+
+func readInt64(value any) int64 {
+	switch typed := value.(type) {
+	case float64:
+		return int64(typed)
+	case float32:
+		return int64(typed)
+	case int:
+		return int64(typed)
+	case int64:
+		return typed
+	case json.Number:
+		parsed, err := typed.Int64()
+		if err != nil {
+			return 0
+		}
+		return parsed
 	default:
 		return 0
 	}

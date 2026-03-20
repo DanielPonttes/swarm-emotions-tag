@@ -19,22 +19,56 @@ phase2_require_cmd() {
   fi
 }
 
+phase2_shell_join() {
+  local joined=""
+  local part
+  for part in "$@"; do
+    printf -v part '%q' "$part"
+    joined+="$part "
+  done
+  printf '%s\n' "${joined% }"
+}
+
+phase2_docker() {
+  if docker info >/dev/null 2>&1; then
+    docker "$@"
+    return
+  fi
+
+  if command -v sg >/dev/null 2>&1; then
+    sg docker -c "$(phase2_shell_join docker "$@")"
+    return
+  fi
+
+  echo "docker daemon is not accessible from this shell" >&2
+  exit 1
+}
+
+phase2_docker_compose() {
+  local compose_args=("-f" "$PHASE2_COMPOSE_FILE")
+  if [ -f "${PHASE2_COMPOSE_OVERRIDE_FILE:-}" ]; then
+    compose_args+=("-f" "$PHASE2_COMPOSE_OVERRIDE_FILE")
+  fi
+  phase2_docker compose "${compose_args[@]}" "$@"
+}
+
 phase2_prepare_env() {
   PHASE2_ROOT_DIR="$(phase2_root_dir)"
   PHASE2_COMPOSE_FILE="$PHASE2_ROOT_DIR/docker-compose.yml"
+  PHASE2_COMPOSE_OVERRIDE_FILE="$PHASE2_ROOT_DIR/docker-compose.override.yml"
 
   HTTP_PORT="${HTTP_PORT:-8080}"
   ORCH_URL="${ORCH_URL:-http://127.0.0.1:${HTTP_PORT}}"
   REDIS_ADDR="${REDIS_ADDR:-127.0.0.1:6379}"
-  POSTGRES_DSN="${POSTGRES_DSN:-postgres://emotionrag:dev_password_change_me@127.0.0.1:5432/emotionrag?sslmode=disable}"
+  POSTGRES_DSN="${POSTGRES_DSN:-postgres://emotionrag:dev_password_change_me@127.0.0.1:5433/emotionrag?sslmode=disable}"
   QDRANT_ADDR="${QDRANT_ADDR:-127.0.0.1:6333}"
-  QDRANT_COLLECTION="${QDRANT_COLLECTION:-memories}"
+  QDRANT_COLLECTION="${QDRANT_COLLECTION:-agent_memories}"
   EMOTION_ENGINE_ADDR="${EMOTION_ENGINE_ADDR:-127.0.0.1:50051}"
   PYTHON_ML_URL="${PYTHON_ML_URL:-http://127.0.0.1:8090}"
   PHASE2_KEEP_STACK_UP="${PHASE2_KEEP_STACK_UP:-false}"
   PHASE2_RESET_STACK="${PHASE2_RESET_STACK:-false}"
 
-  export PHASE2_ROOT_DIR PHASE2_COMPOSE_FILE
+  export PHASE2_ROOT_DIR PHASE2_COMPOSE_FILE PHASE2_COMPOSE_OVERRIDE_FILE
   export HTTP_PORT ORCH_URL REDIS_ADDR POSTGRES_DSN QDRANT_ADDR QDRANT_COLLECTION
   export EMOTION_ENGINE_ADDR PYTHON_ML_URL PHASE2_KEEP_STACK_UP PHASE2_RESET_STACK
 }
@@ -129,10 +163,10 @@ phase2_wait_for_http() {
 
 phase2_compose_up_support() {
   if [ "$PHASE2_RESET_STACK" = "true" ]; then
-    docker compose -f "$PHASE2_COMPOSE_FILE" down --remove-orphans -v >/dev/null 2>&1 || true
+    phase2_docker_compose down --remove-orphans -v >/dev/null 2>&1 || true
   fi
 
-  docker compose -f "$PHASE2_COMPOSE_FILE" up -d redis postgresql qdrant emotion-engine python-ml
+  phase2_docker_compose up -d redis postgresql qdrant emotion-engine python-ml
 }
 
 phase2_wait_for_support() {
@@ -176,7 +210,14 @@ phase2_wait_for_support() {
 
 phase2_start_orchestrator() {
   PHASE2_ORCH_LOG="$(mktemp -t phase2-orchestrator.XXXXXX.log)"
+  PHASE2_ORCH_BIN="$(mktemp -t phase2-orchestrator.XXXXXX.bin)"
   export PHASE2_ORCH_LOG
+  export PHASE2_ORCH_BIN
+
+  (
+    cd "$PHASE2_ROOT_DIR/orchestrator"
+    go build -o "$PHASE2_ORCH_BIN" ./cmd/server
+  ) >>"$PHASE2_ORCH_LOG" 2>&1
 
   (
     cd "$PHASE2_ROOT_DIR/orchestrator"
@@ -188,7 +229,7 @@ phase2_start_orchestrator() {
       QDRANT_COLLECTION="$QDRANT_COLLECTION" \
       EMOTION_ENGINE_ADDR="$EMOTION_ENGINE_ADDR" \
       PYTHON_ML_URL="$PYTHON_ML_URL" \
-      go run ./cmd/server
+      "$PHASE2_ORCH_BIN"
   ) >"$PHASE2_ORCH_LOG" 2>&1 &
 
   PHASE2_ORCH_PID=$!
@@ -226,11 +267,14 @@ phase2_cleanup_orchestrator() {
     kill "$PHASE2_ORCH_PID" >/dev/null 2>&1 || true
     wait "$PHASE2_ORCH_PID" >/dev/null 2>&1 || true
   fi
+  if [ -n "${PHASE2_ORCH_BIN:-}" ] && [ -f "${PHASE2_ORCH_BIN:-}" ]; then
+    rm -f "$PHASE2_ORCH_BIN"
+  fi
 }
 
 phase2_cleanup_stack() {
   if [ "${PHASE2_KEEP_STACK_UP:-false}" != "true" ]; then
-    docker compose -f "$PHASE2_COMPOSE_FILE" down --remove-orphans >/dev/null 2>&1 || true
+    phase2_docker_compose down --remove-orphans >/dev/null 2>&1 || true
   fi
 }
 

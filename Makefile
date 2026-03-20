@@ -17,6 +17,7 @@ help:
 	@echo "  make docker-install-ubuntu - Instala Docker Engine oficial no Ubuntu"
 	@echo "  make qdrant-up     - Sobe apenas o Qdrant e aguarda readiness"
 	@echo "  make orchestrator-local-ollama - Roda o orchestrator no host com Ollama local"
+	@echo "  make phase3-smoke-qwen-local - Smoke E2E real com Ollama/Qwen local"
 	@echo "  make test-go-integration - Roda integracao real dos connectors Go"
 	@echo "  make phase2-smoke-real   - Smoke test local do /interact com deps reais"
 	@echo "  make phase2-stability-real - Carga longa com pprof para fechar a Fase 2"
@@ -75,7 +76,7 @@ proto-gen-go:
 proto-gen-rust:
 	cd emotion-engine && cargo check
 
-.PHONY: docker-up docker-down docker-infra docker-build docker-install-ubuntu qdrant-up orchestrator-local-ollama
+.PHONY: docker-up docker-down docker-infra docker-build docker-install-ubuntu qdrant-up orchestrator-local-ollama phase3-smoke-qwen-local
 docker-up:
 	docker compose up -d --build
 
@@ -96,6 +97,9 @@ qdrant-up:
 
 orchestrator-local-ollama:
 	./scripts/run_orchestrator_local_ollama.sh
+
+phase3-smoke-qwen-local:
+	./scripts/phase3/smoke_qwen_local.sh
 
 .PHONY: phase2-smoke-real phase2-stability-real
 phase2-smoke-real:

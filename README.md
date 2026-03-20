@@ -119,6 +119,18 @@ LLM_BASE_URL=http://127.0.0.1:11434
 LLM_MODEL=Qwen/Qwen3.5-27B
 ```
 
+Para validar o caminho completo `HTTP -> Go -> Python -> Rust -> LLM` com
+dependencias reais, existe um smoke automatizado:
+
+```bash
+make phase3-smoke-qwen-local
+```
+
+Esse alvo roda o `orchestrator` localmente em `:18080`, faz warmup do
+`qwen3.5:27b`, executa um `POST /api/v1/interact` real, verifica `trace_id`
+nos logs do `python-ml` e do `emotion-engine`, e confirma persistencia
+deterministica em Redis e Postgres.
+
 Observacao importante: neste host, o caminho validado foi `Ollama no host` +
 `orchestrator no host` + dependencias reais em Docker (`emotion-engine`,
 `python-ml`, Redis, Postgres e Qdrant). Rodar o `orchestrator` no compose e o

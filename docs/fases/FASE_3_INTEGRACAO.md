@@ -665,6 +665,11 @@ inicial em `Qwen/Qwen3.5-27B`, sem bloquear o restante do pipeline E2E.
   - `LLM_PRESENCE_PENALTY`
   - `LLM_ENABLE_THINKING`
 - `docker-compose.yml` preparado para consumir um servidor LLM local exposto no host.
+- Smoke automatizado `make phase3-smoke-qwen-local` validando:
+  - warmup do `Qwen/Qwen3.5-27B` via Ollama local
+  - `POST /api/v1/interact` real contra Python + Rust + LLM
+  - correlacao de `trace_id` nos logs do `python-ml` e `emotion-engine`
+  - persistencia deterministica em Redis e Postgres
 - `python-ml` preparado com dois modos:
   - `heuristic` para smoke/dev
   - `transformers` para o modelo real de GoEmotions
@@ -701,7 +706,7 @@ controlada antes de evoluir para streaming, traces distribuidos e tuning fino.
 - O fluxo validado com Ollama local atualmente roda de forma mais direta com `orchestrator` no host; manter `orchestrator` no compose e o modelo no host ainda depende de conectividade da bridge Docker ate `11434`.
 - Transporte Go -> Rust no compose ja usa Unix socket; o listener TCP foi mantido apenas para desenvolvimento no host e compatibilidade com scripts atuais.
 - O connector Go do `emotion-engine` agora possui suite `integration` cobrindo `Ready`, as 5 RPCs e um caso real de `INVALID_ARGUMENT`; o que segue pendente e ampliar a cobertura dos outros status codes de erro.
-- Suite E2E single-agent com LLM real ainda nao foi implementada.
+- Existe smoke E2E local com Qwen via `make phase3-smoke-qwen-local`, mas a suite mais longa de single-agent com 20+ turnos e asserts comportamentais ainda nao foi implementada.
 
 ---
 

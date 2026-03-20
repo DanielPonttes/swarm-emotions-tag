@@ -3,47 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-. "$SCRIPT_DIR/../phase2/common.sh"
-
-phase3_normalize_ollama_base_url() {
-  local base_url="${1%/}"
-  base_url="${base_url%/v1}"
-  printf '%s\n' "$base_url"
-}
-
-phase3_wait_for_ollama() {
-  local base_url
-  base_url="$(phase3_normalize_ollama_base_url "$LLM_BASE_URL")"
-  phase2_wait_for_http "ollama" "$base_url/api/tags" 60
-}
-
-phase3_require_ollama_model() {
-  if ! ollama list | awk 'NR > 1 { print $1 }' | grep -Fx "$OLLAMA_MODEL_TAG" >/dev/null 2>&1; then
-    echo "missing Ollama model: $OLLAMA_MODEL_TAG" >&2
-    echo "run: ollama pull $OLLAMA_MODEL_TAG" >&2
-    exit 1
-  fi
-}
-
-phase3_warm_model() {
-  local base_url response
-  base_url="$(phase3_normalize_ollama_base_url "$LLM_BASE_URL")"
-
-  response="$(curl -fsS \
-    -H "Content-Type: application/json" \
-    -d "{\"model\":\"${OLLAMA_MODEL_TAG}\",\"stream\":false,\"think\":false,\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly: OK\"}],\"options\":{\"num_predict\":8,\"temperature\":0}}" \
-    "$base_url/api/chat")"
-
-  python3 - "$response" <<'PY'
-import json
-import sys
-
-payload = json.loads(sys.argv[1])
-content = payload.get("message", {}).get("content", "").strip()
-if content != "OK":
-    raise SystemExit(f"unexpected warmup response: {content!r}")
-PY
-}
+. "$SCRIPT_DIR/common.sh"
 
 phase3_smoke_request() {
   local agent_id unique_token payload response
@@ -101,71 +61,6 @@ print(json.dumps({
     "response": response_text,
 }, ensure_ascii=True))
 PY
-}
-
-phase3_wait_for_service_trace() {
-  local service="$1"
-  local trace_id="$2"
-  local timeout_sec="${3:-20}"
-  local started_at
-
-  started_at="$(date +%s)"
-  while true; do
-    if phase2_docker_compose logs --since 2m "$service" 2>&1 | grep -F "$trace_id" >/dev/null 2>&1; then
-      return 0
-    fi
-
-    if [ "$(( $(date +%s) - started_at ))" -ge "$timeout_sec" ]; then
-      echo "timed out waiting for trace $trace_id in logs for service $service" >&2
-      phase2_docker_compose logs --since 2m "$service" 2>&1 | tail -n 80 >&2 || true
-      return 1
-    fi
-    sleep 1
-  done
-}
-
-phase3_wait_for_redis_working_memory() {
-  local agent_id="$1"
-  local timeout_sec="${2:-20}"
-  local started_at count
-
-  started_at="$(date +%s)"
-  while true; do
-    count="$(phase2_docker_compose exec -T redis redis-cli ZCARD "working_memory:${agent_id}" | tr -d '\r[:space:]')"
-    if [ -n "$count" ] && [ "$count" -ge 2 ]; then
-      return 0
-    fi
-
-    if [ "$(( $(date +%s) - started_at ))" -ge "$timeout_sec" ]; then
-      echo "timed out waiting for Redis working memory entries for agent $agent_id" >&2
-      phase2_docker_compose exec -T redis redis-cli ZRANGE "working_memory:${agent_id}" 0 -1 >&2 || true
-      return 1
-    fi
-    sleep 1
-  done
-}
-
-phase3_wait_for_postgres_interaction() {
-  local agent_id="$1"
-  local timeout_sec="${2:-20}"
-  local started_at count
-
-  started_at="$(date +%s)"
-  while true; do
-    count="$(phase2_docker_compose exec -T postgresql \
-      psql -U emotionrag -d emotionrag -tAc "SELECT COUNT(*) FROM interaction_log WHERE agent_id = '${agent_id}'" | tr -d '\r[:space:]')"
-    if [ -n "$count" ] && [ "$count" -ge 1 ]; then
-      return 0
-    fi
-
-    if [ "$(( $(date +%s) - started_at ))" -ge "$timeout_sec" ]; then
-      echo "timed out waiting for Postgres interaction_log row for agent $agent_id" >&2
-      phase2_docker_compose exec -T postgresql \
-        psql -U emotionrag -d emotionrag -tAc "SELECT agent_id, input_text, fsm_to FROM interaction_log ORDER BY timestamp DESC LIMIT 5" >&2 || true
-      return 1
-    fi
-    sleep 1
-  done
 }
 
 phase2_source_profile
@@ -231,7 +126,7 @@ phase3_wait_for_service_trace "python-ml" "$trace_id"
 phase3_wait_for_service_trace "emotion-engine" "$trace_id"
 
 echo "Verifying deterministic persistence in Redis and Postgres..."
-phase3_wait_for_redis_working_memory "$agent_id"
-phase3_wait_for_postgres_interaction "$agent_id"
+phase3_wait_for_redis_min_entries "$agent_id" 2
+phase3_wait_for_postgres_count "$agent_id" interaction_log 1
 
 echo "Phase 3 Qwen local smoke test completed successfully."

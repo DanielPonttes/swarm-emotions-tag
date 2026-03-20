@@ -18,6 +18,8 @@ help:
 	@echo "  make qdrant-up     - Sobe apenas o Qdrant e aguarda readiness"
 	@echo "  make orchestrator-local-ollama - Roda o orchestrator no host com Ollama local"
 	@echo "  make phase3-smoke-qwen-local - Smoke E2E real com Ollama/Qwen local"
+	@echo "  make phase3-multiturn-qwen-local - Dialogo multi-turno real com Qwen local"
+	@echo "  make phase3-determinism-qwen-local - Regressao deterministica de estados com Qwen local"
 	@echo "  make test-go-integration - Roda integracao real dos connectors Go"
 	@echo "  make phase2-smoke-real   - Smoke test local do /interact com deps reais"
 	@echo "  make phase2-stability-real - Carga longa com pprof para fechar a Fase 2"
@@ -76,7 +78,7 @@ proto-gen-go:
 proto-gen-rust:
 	cd emotion-engine && cargo check
 
-.PHONY: docker-up docker-down docker-infra docker-build docker-install-ubuntu qdrant-up orchestrator-local-ollama phase3-smoke-qwen-local
+.PHONY: docker-up docker-down docker-infra docker-build docker-install-ubuntu qdrant-up orchestrator-local-ollama phase3-smoke-qwen-local phase3-multiturn-qwen-local phase3-determinism-qwen-local
 docker-up:
 	docker compose up -d --build
 
@@ -100,6 +102,12 @@ orchestrator-local-ollama:
 
 phase3-smoke-qwen-local:
 	./scripts/phase3/smoke_qwen_local.sh
+
+phase3-multiturn-qwen-local:
+	./scripts/phase3/multiturn_qwen_local.sh
+
+phase3-determinism-qwen-local:
+	./scripts/phase3/determinism_qwen_local.sh
 
 .PHONY: phase2-smoke-real phase2-stability-real
 phase2-smoke-real:

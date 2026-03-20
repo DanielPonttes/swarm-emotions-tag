@@ -131,6 +131,27 @@ Esse alvo roda o `orchestrator` localmente em `:18080`, faz warmup do
 nos logs do `python-ml` e do `emotion-engine`, e confirma persistencia
 deterministica em Redis e Postgres.
 
+Tambem existe uma suite multi-turno com 20 interacoes no mesmo agente:
+
+```bash
+make phase3-multiturn-qwen-local
+```
+
+Esse alvo valida a evolucao de estado `curious -> frustrated -> empathetic ->
+joyful -> worried ...`, respeita os `min_duration_ms` da FSM com atrasos
+automaticos entre turnos, confere o `/state`, compara o `/history` inteiro e
+verifica a persistencia final em Redis e Postgres.
+
+Para fechar a regressao deterministica de estados, existe um alvo separado:
+
+```bash
+make phase3-determinism-qwen-local
+```
+
+Esse alvo executa o mesmo roteiro de 20 turnos duas vezes, em agentes limpos e
+com exatamente os mesmos inputs, e falha se a sequencia de estados diferir entre
+as duas execucoes.
+
 Observacao importante: neste host, o caminho validado foi `Ollama no host` +
 `orchestrator no host` + dependencias reais em Docker (`emotion-engine`,
 `python-ml`, Redis, Postgres e Qdrant). Rodar o `orchestrator` no compose e o

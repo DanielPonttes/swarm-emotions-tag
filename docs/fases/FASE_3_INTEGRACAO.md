@@ -619,8 +619,8 @@ func TestLatency_PipelineWithoutLLM(t *testing.T) {
 - [x] Pipeline completo funciona: HTTP -> Go -> Python -> Rust -> Qdrant -> LLM -> response
 - [x] Latencia < 5s por turno (com LLM real)
 - [ ] Latencia < 100ms (sem LLM)
-- [ ] Estado emocional evolui coerentemente em 20+ turnos
-- [ ] Modo deterministico: mesmos inputs -> mesmos estados
+- [x] Estado emocional evolui coerentemente em 20+ turnos
+- [x] Modo deterministico: mesmos inputs -> mesmos estados
 - [x] Logs com trace distribuido completo (request ID -> Go -> Rust -> Python)
 
 ### Resiliencia
@@ -670,6 +670,15 @@ inicial em `Qwen/Qwen3.5-27B`, sem bloquear o restante do pipeline E2E.
   - `POST /api/v1/interact` real contra Python + Rust + LLM
   - correlacao de `trace_id` nos logs do `python-ml` e `emotion-engine`
   - persistencia deterministica em Redis e Postgres
+- Suite multi-turno `make phase3-multiturn-qwen-local` validando:
+  - 20 turnos reais no mesmo agente com `Qwen/Qwen3.5-27B`
+  - evolucao coerente de FSM ao longo da conversa
+  - delays automaticos para respeitar `min_duration_ms` da FSM
+  - consistencia entre `/state`, `/history`, Redis e Postgres
+- Suite de regressao `make phase3-determinism-qwen-local` validando:
+  - duas execucoes limpas com os mesmos 20 inputs
+  - comparacao exata da sequencia de estados entre os dois runs
+  - falha imediata se a historia emocional divergir
 - `python-ml` preparado com dois modos:
   - `heuristic` para smoke/dev
   - `transformers` para o modelo real de GoEmotions
@@ -706,7 +715,7 @@ controlada antes de evoluir para streaming, traces distribuidos e tuning fino.
 - O fluxo validado com Ollama local atualmente roda de forma mais direta com `orchestrator` no host; manter `orchestrator` no compose e o modelo no host ainda depende de conectividade da bridge Docker ate `11434`.
 - Transporte Go -> Rust no compose ja usa Unix socket; o listener TCP foi mantido apenas para desenvolvimento no host e compatibilidade com scripts atuais.
 - O connector Go do `emotion-engine` agora possui suite `integration` cobrindo `Ready`, as 5 RPCs e um caso real de `INVALID_ARGUMENT`; o que segue pendente e ampliar a cobertura dos outros status codes de erro.
-- Existe smoke E2E local com Qwen via `make phase3-smoke-qwen-local`, mas a suite mais longa de single-agent com 20+ turnos e asserts comportamentais ainda nao foi implementada.
+- Existem smoke E2E, suite multi-turno e regressao deterministica local com Qwen via `make phase3-smoke-qwen-local`, `make phase3-multiturn-qwen-local` e `make phase3-determinism-qwen-local`; o que ainda falta e ampliar a cobertura de cenarios comportamentais e de status codes de erro.
 
 ---
 

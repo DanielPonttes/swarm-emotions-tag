@@ -130,6 +130,8 @@ type VectorStoreClient interface {
 	QuerySemantic(ctx context.Context, params QuerySemanticParams) ([]model.MemoryHit, error)
 	QueryEmotional(ctx context.Context, params QueryEmotionalParams) ([]model.MemoryHit, error)
 	UpsertMemory(ctx context.Context, memory model.StoredMemory) error
+	GetMemoriesByLevel(ctx context.Context, agentID string, level uint32, limit int) ([]model.StoredMemory, error)
+	UpdateMemoryLevel(ctx context.Context, memoryID string, level uint32) error
 }
 
 type CacheClient interface {

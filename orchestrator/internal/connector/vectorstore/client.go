@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -38,6 +39,12 @@ type searchRequest struct {
 	Filter      *qdrantFilter `json:"filter,omitempty"`
 }
 
+type scrollRequest struct {
+	Limit       int           `json:"limit"`
+	WithPayload bool          `json:"with_payload"`
+	Filter      *qdrantFilter `json:"filter,omitempty"`
+}
+
 type qdrantFilter struct {
 	Must []qdrantMatch `json:"must,omitempty"`
 }
@@ -48,12 +55,21 @@ type qdrantMatch struct {
 }
 
 type qdrantMatchCondition struct {
-	Value string `json:"value"`
+	Value any `json:"value"`
 }
 
 type searchResponse struct {
 	Status string        `json:"status"`
 	Result []searchPoint `json:"result"`
+}
+
+type scrollResponse struct {
+	Status string       `json:"status"`
+	Result scrollResult `json:"result"`
+}
+
+type scrollResult struct {
+	Points []searchPoint `json:"points"`
 }
 
 type searchPoint struct {
@@ -170,7 +186,8 @@ func (c *Client) UpsertMemory(ctx context.Context, memory model.StoredMemory) er
 					"intensity":          memory.Intensity,
 					"memory_level":       memory.MemoryLevel,
 					"is_pseudopermanent": memory.IsPseudopermanent,
-					"access_count":       0,
+					"access_count":       memory.AccessCount,
+					"valence_magnitude":  ensureValenceMagnitude(memory),
 					"created_at":         memory.CreatedAtMs,
 					"last_accessed_at":   memory.CreatedAtMs,
 				},
@@ -205,6 +222,120 @@ func (c *Client) UpsertMemory(ctx context.Context, memory model.StoredMemory) er
 	})
 	if err != nil {
 		c.metrics.IncDependencyError("qdrant", "upsert_memory")
+	}
+	return err
+}
+
+func (c *Client) GetMemoriesByLevel(ctx context.Context, agentID string, level uint32, limit int) ([]model.StoredMemory, error) {
+	if strings.TrimSpace(agentID) == "" {
+		return nil, fmt.Errorf("agent_id is required")
+	}
+	if level == 0 {
+		return nil, fmt.Errorf("memory level is required")
+	}
+
+	reqBody := scrollRequest{
+		Limit:       normalizeLimit(limit),
+		WithPayload: true,
+		Filter: &qdrantFilter{
+			Must: []qdrantMatch{
+				{Key: "agent_id", Match: qdrantMatchCondition{Value: agentID}},
+				{Key: "memory_level", Match: qdrantMatchCondition{Value: level}},
+			},
+		},
+	}
+
+	payload, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	memories, err := resilience.DoValue(ctx, c.retry, func(attemptCtx context.Context) ([]model.StoredMemory, error) {
+		callCtx, cancel := context.WithTimeout(attemptCtx, 350*time.Millisecond)
+		defer cancel()
+		url := fmt.Sprintf("%s/collections/%s/points/scroll", c.baseURL, c.collection)
+		req, err := http.NewRequestWithContext(callCtx, http.MethodPost, url, bytes.NewReader(payload))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.http.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode >= 400 {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+			return nil, fmt.Errorf("qdrant scroll failed with %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		}
+
+		var decoded scrollResponse
+		if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+			return nil, err
+		}
+
+		out := make([]model.StoredMemory, 0, len(decoded.Result.Points))
+		for _, point := range decoded.Result.Points {
+			memory := decodeStoredMemory(point)
+			if memory.MemoryID == "" {
+				continue
+			}
+			out = append(out, memory)
+		}
+		sort.SliceStable(out, func(i, j int) bool {
+			return out[i].CreatedAtMs > out[j].CreatedAtMs
+		})
+		return out, nil
+	})
+	if err != nil {
+		c.metrics.IncDependencyError("qdrant", "get_memories_by_level")
+	}
+	return memories, err
+}
+
+func (c *Client) UpdateMemoryLevel(ctx context.Context, memoryID string, level uint32) error {
+	if strings.TrimSpace(memoryID) == "" {
+		return fmt.Errorf("memory_id is required")
+	}
+	if level == 0 {
+		return fmt.Errorf("memory level is required")
+	}
+
+	payload, err := json.Marshal(map[string]any{
+		"payload": map[string]any{
+			"memory_level":       level,
+			"is_pseudopermanent": level >= 3,
+		},
+		"points": []string{memoryID},
+	})
+	if err != nil {
+		return err
+	}
+
+	err = resilience.Do(ctx, c.retry, func(attemptCtx context.Context) error {
+		callCtx, cancel := context.WithTimeout(attemptCtx, 350*time.Millisecond)
+		defer cancel()
+		url := fmt.Sprintf("%s/collections/%s/points/payload?wait=true", c.baseURL, c.collection)
+		req, err := http.NewRequestWithContext(callCtx, http.MethodPost, url, bytes.NewReader(payload))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.http.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode >= 400 {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+			return fmt.Errorf("qdrant payload update failed with %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		}
+		return nil
+	})
+	if err != nil {
+		c.metrics.IncDependencyError("qdrant", "update_memory_level")
 	}
 	return err
 }
@@ -260,13 +391,14 @@ func (c *Client) search(ctx context.Context, vector []float32, agentID string, l
 
 		result := make([]model.MemoryHit, 0, len(decoded.Result))
 		for _, point := range decoded.Result {
+			stored := decodeStoredMemory(point)
 			hit := model.MemoryHit{
-				MemoryID:          resolveMemoryID(point.ID, point.Payload),
-				Content:           firstNonEmptyString(point.Payload["content"], point.Payload["content_text"]),
-				CognitiveScore:    readFloat32(point.Payload["cognitive_score"]),
-				MemoryLevel:       readUint32(point.Payload["memory_level"]),
-				IsPseudopermanent: readBool(point.Payload["is_pseudopermanent"]),
-				CreatedAtMs:       readInt64(point.Payload["created_at"]),
+				MemoryID:          stored.MemoryID,
+				Content:           stored.Content,
+				CognitiveScore:    stored.CognitiveScore,
+				MemoryLevel:       stored.MemoryLevel,
+				IsPseudopermanent: stored.IsPseudopermanent,
+				CreatedAtMs:       stored.CreatedAtMs,
 			}
 			if hit.MemoryID == "" {
 				continue
@@ -292,6 +424,25 @@ func (c *Client) search(ctx context.Context, vector []float32, agentID string, l
 		return nil, err
 	}
 	return hits, nil
+}
+
+func decodeStoredMemory(point searchPoint) model.StoredMemory {
+	memory := model.StoredMemory{
+		MemoryID:          resolveMemoryID(point.ID, point.Payload),
+		AgentID:           readString(point.Payload["agent_id"]),
+		Content:           firstNonEmptyString(point.Payload["content"], point.Payload["content_text"]),
+		CognitiveScore:    readFloat32(point.Payload["cognitive_score"]),
+		Intensity:         readFloat32(point.Payload["intensity"]),
+		MemoryLevel:       readUint32(point.Payload["memory_level"]),
+		IsPseudopermanent: readBool(point.Payload["is_pseudopermanent"]),
+		AccessCount:       readUint32(point.Payload["access_count"]),
+		ValenceMagnitude:  readFloat32(point.Payload["valence_magnitude"]),
+		CreatedAtMs:       readInt64(point.Payload["created_at"]),
+	}
+	if memory.MemoryLevel == 0 {
+		memory.MemoryLevel = 1
+	}
+	return memory
 }
 
 func (c *Client) ensureCollection(ctx context.Context) error {
@@ -454,6 +605,16 @@ func resolveMemoryID(id any, payload map[string]any) string {
 func contentHash(content string) string {
 	sum := sha1.Sum([]byte(content))
 	return fmt.Sprintf("%x", sum[:])
+}
+
+func ensureValenceMagnitude(memory model.StoredMemory) float32 {
+	if memory.ValenceMagnitude > 0 {
+		return memory.ValenceMagnitude
+	}
+	if len(memory.Emotion.Components) == 0 {
+		return 0
+	}
+	return float32(math.Abs(float64(memory.Emotion.Components[0])))
 }
 
 func firstNonEmptyString(values ...any) string {

@@ -124,6 +124,9 @@ func (c *MockClient) UpsertMemory(_ context.Context, memory model.StoredMemory) 
 	if memory.CreatedAtMs == 0 {
 		memory.CreatedAtMs = 1
 	}
+	if memory.ValenceMagnitude == 0 && len(memory.Emotion.Components) > 0 {
+		memory.ValenceMagnitude = float32(math.Abs(float64(memory.Emotion.Components[0])))
+	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -142,6 +145,50 @@ func (c *MockClient) UpsertMemory(_ context.Context, memory model.StoredMemory) 
 	}
 	c.memories[memory.AgentID] = items
 	return nil
+}
+
+func (c *MockClient) GetMemoriesByLevel(_ context.Context, agentID string, level uint32, limit int) ([]model.StoredMemory, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	out := make([]model.StoredMemory, 0)
+	for _, memory := range c.memories[agentID] {
+		if memory.MemoryLevel == level {
+			out = append(out, memory)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].CreatedAtMs > out[j].CreatedAtMs
+	})
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (c *MockClient) UpdateMemoryLevel(_ context.Context, memoryID string, level uint32) error {
+	if strings.TrimSpace(memoryID) == "" {
+		return fmt.Errorf("memory_id is required")
+	}
+	if level == 0 {
+		return fmt.Errorf("memory level is required")
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for agentID, items := range c.memories {
+		for i := range items {
+			if items[i].MemoryID != memoryID {
+				continue
+			}
+			items[i].MemoryLevel = level
+			items[i].IsPseudopermanent = level >= 3
+			c.memories[agentID] = items
+			return nil
+		}
+	}
+	return fmt.Errorf("memory %s not found", memoryID)
 }
 
 func minFloat32(a, b float32) float32 {

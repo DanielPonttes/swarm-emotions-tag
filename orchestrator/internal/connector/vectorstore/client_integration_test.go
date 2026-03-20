@@ -170,6 +170,70 @@ func TestClientIntegration_UpsertMemoryMakesPromotedMemoryQueryable(t *testing.T
 	}
 }
 
+func TestClientIntegration_GetMemoriesByLevelAndPromoteToL3(t *testing.T) {
+	rawQdrantAddr := testutil.EnvOrDefault("QDRANT_ADDR", "127.0.0.1:6333")
+	hostPort, err := testutil.ExtractHostPort(rawQdrantAddr, "6333")
+	if err != nil {
+		t.Fatalf("extract qdrant host: %v", err)
+	}
+	if strings.HasSuffix(hostPort, ":6334") {
+		hostPort = strings.TrimSuffix(hostPort, ":6334") + ":6333"
+	}
+	testutil.RequireTCP(t, hostPort)
+
+	collection := testutil.UniqueID("it-qdrant-level")
+	client, err := vectorstore.NewClient(rawQdrantAddr, collection)
+	if err != nil {
+		t.Fatalf("new vectorstore client: %v", err)
+	}
+
+	ctx := context.Background()
+	agentID := testutil.UniqueID("agent-level")
+	memory := model.StoredMemory{
+		MemoryID:         testutil.UniqueID("mem"),
+		AgentID:          agentID,
+		Content:          "recurring escalation memory",
+		Emotion:          model.EmotionVector{Components: []float32{-0.7, 0.8, -0.1, 0.2, 0, 0.1}},
+		Intensity:        0.97,
+		CognitiveScore:   0.84,
+		MemoryLevel:      2,
+		ValenceMagnitude: 0.7,
+		CreatedAtMs:      time.Now().UnixMilli(),
+	}
+
+	if err := client.UpsertMemory(ctx, memory); err != nil {
+		t.Fatalf("upsert memory: %v", err)
+	}
+
+	l2Memories, err := client.GetMemoriesByLevel(ctx, agentID, 2, 10)
+	if err != nil {
+		t.Fatalf("get l2 memories: %v", err)
+	}
+	l2Memory := findStoredMemory(l2Memories, memory.MemoryID)
+	if l2Memory == nil {
+		t.Fatalf("expected L2 memories to include %q, got %#v", memory.MemoryID, l2Memories)
+	}
+	if l2Memory.Intensity != memory.Intensity {
+		t.Fatalf("expected intensity to round-trip, got %f want %f", l2Memory.Intensity, memory.Intensity)
+	}
+
+	if err := client.UpdateMemoryLevel(ctx, memory.MemoryID, 3); err != nil {
+		t.Fatalf("promote memory to L3: %v", err)
+	}
+
+	l3Memories, err := client.GetMemoriesByLevel(ctx, agentID, 3, 10)
+	if err != nil {
+		t.Fatalf("get l3 memories: %v", err)
+	}
+	l3Memory := findStoredMemory(l3Memories, memory.MemoryID)
+	if l3Memory == nil {
+		t.Fatalf("expected L3 memories to include %q, got %#v", memory.MemoryID, l3Memories)
+	}
+	if !l3Memory.IsPseudopermanent {
+		t.Fatalf("expected promoted L3 memory to be pseudopermanent")
+	}
+}
+
 func upsertPoints(baseURL, collection string, points []map[string]any) error {
 	body, err := json.Marshal(map[string]any{
 		"points": points,
@@ -251,6 +315,15 @@ func findMemory(hits []model.MemoryHit, memoryID string) *model.MemoryHit {
 	for i := range hits {
 		if hits[i].MemoryID == memoryID {
 			return &hits[i]
+		}
+	}
+	return nil
+}
+
+func findStoredMemory(memories []model.StoredMemory, memoryID string) *model.StoredMemory {
+	for i := range memories {
+		if memories[i].MemoryID == memoryID {
+			return &memories[i]
 		}
 	}
 	return nil

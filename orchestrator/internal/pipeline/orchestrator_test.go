@@ -335,6 +335,60 @@ func TestPostProcessPromotesHighIntensityInteractionToVectorStore(t *testing.T) 
 	}
 }
 
+func TestPostProcessPromotesExistingL2MemoryToL3(t *testing.T) {
+	store := vectorstore.NewMockClient()
+	if err := store.UpsertMemory(context.Background(), model.StoredMemory{
+		MemoryID:         "existing-l2",
+		AgentID:          "agent-l3",
+		Content:          "Escalation history for a recurring failure",
+		Emotion:          model.EmotionVector{Components: []float32{-0.8, 0.7, -0.1, 0.1, 0, 0.1}},
+		Intensity:        0.95,
+		MemoryLevel:      2,
+		ValenceMagnitude: 0.8,
+		CreatedAtMs:      time.Now().Add(-time.Hour).UnixMilli(),
+	}); err != nil {
+		t.Fatalf("seed L2 memory: %v", err)
+	}
+
+	orchestrator := New(
+		emotion.NewMockClient(),
+		store,
+		cache.NewMockClient(),
+		db.NewMockClient(),
+		llm.NewMockProvider(),
+		classifier.NewMockClient(),
+	)
+
+	orchestrator.stepPostProcess(
+		context.Background(),
+		Input{AgentID: "agent-l3", Text: "status update"},
+		"seguindo com o diagnóstico",
+		&FSMResult{
+			NewEmotion:   model.EmotionVector{Components: []float32{0.1, 0.2, 0.1}},
+			NewFsmState:  model.FsmState{StateName: "curious", MacroState: "positive"},
+			NewIntensity: 0.3,
+			Stimulus:     "novelty",
+		},
+		nil,
+		model.DefaultCognitiveContext("agent-l3"),
+		FindEmotionDirective(model.EmotionVector{Components: []float32{0.1, 0.2, 0.1}}),
+	)
+
+	l3Memories, err := store.GetMemoriesByLevel(context.Background(), "agent-l3", 3, 10)
+	if err != nil {
+		t.Fatalf("get l3 memories: %v", err)
+	}
+	if len(l3Memories) != 1 {
+		t.Fatalf("expected one L3 memory after promotion, got %d", len(l3Memories))
+	}
+	if l3Memories[0].MemoryID != "existing-l2" {
+		t.Fatalf("expected existing memory to be promoted, got %q", l3Memories[0].MemoryID)
+	}
+	if !l3Memories[0].IsPseudopermanent {
+		t.Fatalf("expected promoted L3 memory to be pseudopermanent")
+	}
+}
+
 type slowVectorStore struct {
 	delay time.Duration
 }
@@ -350,6 +404,14 @@ func (s slowVectorStore) QueryEmotional(_ context.Context, _ connector.QueryEmot
 }
 
 func (s slowVectorStore) UpsertMemory(context.Context, model.StoredMemory) error {
+	return nil
+}
+
+func (s slowVectorStore) GetMemoriesByLevel(context.Context, string, uint32, int) ([]model.StoredMemory, error) {
+	return nil, nil
+}
+
+func (s slowVectorStore) UpdateMemoryLevel(context.Context, string, uint32) error {
 	return nil
 }
 
@@ -412,5 +474,28 @@ func (s *spyVectorStore) QueryEmotional(context.Context, connector.QueryEmotiona
 
 func (s *spyVectorStore) UpsertMemory(_ context.Context, memory model.StoredMemory) error {
 	s.memories = append(s.memories, memory)
+	return nil
+}
+
+func (s *spyVectorStore) GetMemoriesByLevel(_ context.Context, _ string, level uint32, limit int) ([]model.StoredMemory, error) {
+	out := make([]model.StoredMemory, 0)
+	for _, memory := range s.memories {
+		if memory.MemoryLevel == level {
+			out = append(out, memory)
+		}
+	}
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (s *spyVectorStore) UpdateMemoryLevel(_ context.Context, memoryID string, level uint32) error {
+	for i := range s.memories {
+		if s.memories[i].MemoryID == memoryID {
+			s.memories[i].MemoryLevel = level
+			s.memories[i].IsPseudopermanent = level >= 3
+		}
+	}
 	return nil
 }

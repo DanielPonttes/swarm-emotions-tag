@@ -11,6 +11,13 @@ import (
 	"github.com/swarm-emotions/orchestrator/internal/model"
 )
 
+const (
+	promotionIntensityThreshold float32 = 0.9
+	promotionFrequencyThreshold uint32  = 10
+	promotionValenceThreshold   float32 = 0.8
+	promotionScanLimit                  = 100
+)
+
 func (o *Orchestrator) stepPostProcess(
 	ctx context.Context,
 	input Input,
@@ -62,6 +69,7 @@ func (o *Orchestrator) stepPostProcess(
 		Score:       fsmResult.NewIntensity,
 		CreatedAtMs: now + 1,
 	})
+	evaluateL2Promotions(ctx, o, input.AgentID)
 	persistPromotedInteractionMemory(ctx, o, input, llmResponse, fsmResult, ranked, now)
 
 	nextContext := model.DefaultCognitiveContext(input.AgentID)
@@ -128,9 +136,9 @@ func persistPromotedInteractionMemory(
 				ValenceMagnitude: absFloat32(firstComponent(fsmResult.NewEmotion)),
 			},
 		},
-		IntensityThreshold: 0.9,
-		FrequencyThreshold: 10,
-		ValenceThreshold:   0.8,
+		IntensityThreshold: promotionIntensityThreshold,
+		FrequencyThreshold: promotionFrequencyThreshold,
+		ValenceThreshold:   promotionValenceThreshold,
 	})
 	if err != nil || promotion == nil || len(promotion.Decisions) == 0 {
 		return
@@ -150,6 +158,7 @@ func persistPromotedInteractionMemory(
 		CognitiveScore:    promotedMemoryCognitiveScore(ranked, fsmResult.NewIntensity),
 		MemoryLevel:       decision.TargetLevel,
 		IsPseudopermanent: decision.TargetLevel >= 3,
+		ValenceMagnitude:  absFloat32(firstComponent(fsmResult.NewEmotion)),
 		CreatedAtMs:       now,
 	})
 }
@@ -177,4 +186,41 @@ func promotedMemoryCognitiveScore(ranked []model.RankedMemory, intensity float32
 		return 1
 	}
 	return score
+}
+
+func evaluateL2Promotions(ctx context.Context, orchestrator *Orchestrator, agentID string) {
+	memories, err := orchestrator.vectorStore.GetMemoriesByLevel(ctx, agentID, 2, promotionScanLimit)
+	if err != nil || len(memories) == 0 {
+		return
+	}
+
+	candidates := make([]model.PromotionCandidate, 0, len(memories))
+	for _, memory := range memories {
+		candidates = append(candidates, model.PromotionCandidate{
+			MemoryID:         memory.MemoryID,
+			Intensity:        memory.Intensity,
+			CurrentLevel:     memory.MemoryLevel,
+			AccessFrequency:  memory.AccessCount,
+			ValenceMagnitude: memory.ValenceMagnitude,
+		})
+	}
+
+	promotion, err := orchestrator.emotionClient.EvaluatePromotion(ctx, &connector.PromotionRequest{
+		Candidates:         candidates,
+		IntensityThreshold: promotionIntensityThreshold,
+		FrequencyThreshold: promotionFrequencyThreshold,
+		ValenceThreshold:   promotionValenceThreshold,
+	})
+	if err != nil || promotion == nil {
+		return
+	}
+
+	for _, decision := range promotion.Decisions {
+		if !decision.ShouldPromote || decision.TargetLevel < 3 {
+			continue
+		}
+		if err := orchestrator.vectorStore.UpdateMemoryLevel(ctx, decision.MemoryID, decision.TargetLevel); err != nil {
+			slog.Warn("failed to promote memory to L3", "memory_id", decision.MemoryID, "error", err)
+		}
+	}
 }

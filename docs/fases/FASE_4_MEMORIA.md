@@ -566,9 +566,9 @@ func TestDecayReducesScoreOverTime(t *testing.T) {
 - [x] L1 em Redis: push/get working memory funcional com TTL
 - [x] L1 auto-expira apos TTL (sem batch job)
 - [x] L2 armazenado em Qdrant com level=2
-- [ ] L3 armazenado em Qdrant com level=3 e is_pseudopermanent=true
+- [x] L3 armazenado em Qdrant com level=3 e is_pseudopermanent=true
 - [x] Promocao L1->L2 por intensidade imediata funcional
-- [ ] Promocao L2->L3 por avaliacao (Rust) funcional
+- [x] Promocao L2->L3 por avaliacao (Rust) funcional
 
 ### Decaimento
 - [x] Decaimento lazy aplicado no query-time

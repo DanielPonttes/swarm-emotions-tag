@@ -47,6 +47,8 @@ type StoredMemory struct {
 	CognitiveScore    float32       `json:"cognitive_score"`
 	MemoryLevel       uint32        `json:"memory_level"`
 	IsPseudopermanent bool          `json:"is_pseudopermanent"`
+	AccessCount       uint32        `json:"access_count"`
+	ValenceMagnitude  float32       `json:"valence_magnitude"`
 	CreatedAtMs       int64         `json:"created_at_ms"`
 }
 

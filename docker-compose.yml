@@ -39,7 +39,10 @@ services:
       - "50051:50051"
     environment:
       GRPC_PORT: 50051
+      GRPC_SOCKET_PATH: /var/run/emotion-engine/engine.sock
       RUST_LOG: info,emotion_engine=debug
+    volumes:
+      - grpc_socket:/var/run/emotion-engine
     depends_on:
       - redis
 
@@ -51,7 +54,7 @@ services:
       - "8080:8080"
     environment:
       HTTP_PORT: 8080
-      EMOTION_ENGINE_ADDR: emotion-engine:50051
+      EMOTION_ENGINE_ADDR: unix:///var/run/emotion-engine/engine.sock
       QDRANT_ADDR: qdrant:6334
       REDIS_ADDR: redis:6379
       POSTGRES_DSN: postgres://emotionrag:dev_password_change_me@postgresql:5432/emotionrag?sslmode=disable
@@ -70,6 +73,8 @@ services:
       LLM_TOP_K: ${LLM_TOP_K:-20}
       LLM_PRESENCE_PENALTY: ${LLM_PRESENCE_PENALTY:-0.0}
       LLM_ENABLE_THINKING: ${LLM_ENABLE_THINKING:-false}
+    volumes:
+      - grpc_socket:/var/run/emotion-engine
     depends_on:
       - emotion-engine
       - qdrant
@@ -97,5 +102,6 @@ services:
       CLASSIFIER_TOP_K: ${CLASSIFIER_TOP_K:-5}
 
 volumes:
+  grpc_socket:
   qdrant_data:
   pg_data:

@@ -422,6 +422,14 @@ pub fn grpc_addr_from_env() -> String {
     format!("0.0.0.0:{port}")
 }
 
+pub fn grpc_socket_path_from_env() -> Option<PathBuf> {
+    std::env::var("GRPC_SOCKET_PATH")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

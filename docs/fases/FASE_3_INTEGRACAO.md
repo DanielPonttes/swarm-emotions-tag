@@ -91,6 +91,11 @@ use opentelemetry::propagation::TextMapPropagator;
 ```
 
 **Status atual no codigo (2026-03-19):**
+- O `docker-compose` do repositório monta um volume `grpc_socket` compartilhado entre
+  `orchestrator` e `emotion-engine`.
+- O `orchestrator` em container usa `EMOTION_ENGINE_ADDR=unix:///var/run/emotion-engine/engine.sock`.
+- O `emotion-engine` sobe o listener Unix em `GRPC_SOCKET_PATH` e mantem TCP em `GRPC_PORT`
+  para fluxos de desenvolvimento no host.
 - O HTTP `request_id` do orquestrador e preservado no `context.Context`.
 - O client Go injeta `x-trace-id` no metadata gRPC para todas as RPCs ao `emotion-engine`.
 - O `emotion-engine` aplica interceptor tonic para capturar `x-trace-id`/`traceparent`
@@ -590,10 +595,10 @@ func TestLatency_PipelineWithoutLLM(t *testing.T) {
 
 > **Status atualizado em 2026-03-19 com base no codigo e nos testes do repositório**
 >
-> **Resumo:** classificacao Python, cache/fallback e parte da resiliencia estao implementados; a integracao gRPC existe sobre TCP, a propagacao basica de trace Go -> Rust ja esta ligada, e os itens de E2E/observabilidade distribuida completa ainda seguem pendentes.
+> **Resumo:** classificacao Python, cache/fallback e parte da resiliencia estao implementados; a integracao gRPC Go -> Rust ja roda por Unix socket no compose, a propagacao basica de trace Go -> Rust esta ligada, e os itens de E2E/observabilidade distribuida completa ainda seguem pendentes.
 
 ### Integracao gRPC
-- [ ] Go conecta ao Rust via Unix domain socket
+- [x] Go conecta ao Rust via Unix domain socket
 - [x] Trace IDs propagam de Go para Rust (visivel nos logs)
 - [ ] Erros Rust aparecem como gRPC status codes adequados no Go
 - [ ] Todas as 5 RPCs funcionam Go -> Rust
@@ -681,7 +686,7 @@ controlada antes de evoluir para streaming, traces distribuidos e tuning fino.
 3. Validar `GET /ready` e um `POST /api/v1/interact` com Rust/Python reais.
 4. Medir latencia por turno com `LLM_MAX_TOKENS=256`.
 5. So depois disso seguir para:
-   - Unix domain socket Go <-> Rust
+   - logs/traces distribuidos completos ate Python/OpenTelemetry
    - cache Redis do classifier
    - testes E2E de 20 turnos
 
@@ -689,7 +694,7 @@ controlada antes de evoluir para streaming, traces distribuidos e tuning fino.
 
 - Python classifier real ja esta preparado, mas ainda depende de execucao com extras `ml` e validacao E2E no ambiente alvo.
 - Trace distribuido Go -> Rust ja foi ligado via metadata gRPC (`x-trace-id`), mas o trecho completo ate Python/OpenTelemetry ainda segue pendente.
-- Transporte Go -> Rust ainda usa TCP; Unix socket segue pendente.
+- Transporte Go -> Rust no compose ja usa Unix socket; o listener TCP foi mantido apenas para desenvolvimento no host e compatibilidade com scripts atuais.
 - Suite E2E single-agent com LLM real ainda nao foi implementada.
 
 ---

@@ -3,6 +3,7 @@ package emotion
 import (
 	"context"
 	"net"
+	"path/filepath"
 	"testing"
 
 	"github.com/swarm-emotions/orchestrator/internal/connector"
@@ -39,6 +40,20 @@ func TestClientTransitionState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
+	runTransitionStateTest(t, listener, listener.Addr().String())
+}
+
+func TestClientTransitionStateOverUnixSocket(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "emotion-engine.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("listen unix: %v", err)
+	}
+	runTransitionStateTest(t, listener, "unix://"+socketPath)
+}
+
+func runTransitionStateTest(t *testing.T, listener net.Listener, addr string) {
+	t.Helper()
 	server := grpc.NewServer()
 	testSvc := &testServer{metadataCh: make(chan metadata.MD, 1)}
 	pb.RegisterEmotionEngineServiceServer(server, testSvc)
@@ -48,8 +63,9 @@ func TestClientTransitionState(t *testing.T) {
 		}
 	}()
 	defer server.Stop()
+	defer listener.Close()
 
-	client, err := NewClient(listener.Addr().String())
+	client, err := NewClient(addr)
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}

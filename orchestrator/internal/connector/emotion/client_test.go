@@ -7,15 +7,23 @@ import (
 
 	"github.com/swarm-emotions/orchestrator/internal/connector"
 	"github.com/swarm-emotions/orchestrator/internal/model"
+	"github.com/swarm-emotions/orchestrator/internal/tracectx"
 	pb "github.com/swarm-emotions/orchestrator/pkg/proto/emotion_engine/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 type testServer struct {
 	pb.UnimplementedEmotionEngineServiceServer
+	metadataCh chan metadata.MD
 }
 
-func (s *testServer) TransitionState(context.Context, *pb.TransitionStateRequest) (*pb.TransitionStateResponse, error) {
+func (s *testServer) TransitionState(ctx context.Context, _ *pb.TransitionStateRequest) (*pb.TransitionStateResponse, error) {
+	if s.metadataCh != nil {
+		if md, ok := metadata.FromIncomingContext(ctx); ok {
+			s.metadataCh <- md.Copy()
+		}
+	}
 	return &pb.TransitionStateResponse{
 		NewState: &pb.FsmState{
 			StateName:   "joyful",
@@ -32,7 +40,8 @@ func TestClientTransitionState(t *testing.T) {
 		t.Fatalf("listen: %v", err)
 	}
 	server := grpc.NewServer()
-	pb.RegisterEmotionEngineServiceServer(server, &testServer{})
+	testSvc := &testServer{metadataCh: make(chan metadata.MD, 1)}
+	pb.RegisterEmotionEngineServiceServer(server, testSvc)
 	go func() {
 		if serveErr := server.Serve(listener); serveErr != nil {
 			t.Logf("grpc test server stopped: %v", serveErr)
@@ -46,7 +55,8 @@ func TestClientTransitionState(t *testing.T) {
 	}
 	defer client.Close()
 
-	response, err := client.TransitionState(context.Background(), &connector.TransitionRequest{
+	ctx := tracectx.WithTraceID(context.Background(), "req-123")
+	response, err := client.TransitionState(ctx, &connector.TransitionRequest{
 		AgentID:      "agent-1",
 		CurrentState: model.FsmState{StateName: "neutral", MacroState: "neutral"},
 		Stimulus:     "praise",
@@ -59,5 +69,14 @@ func TestClientTransitionState(t *testing.T) {
 	}
 	if response.NewState.StateName != "joyful" {
 		t.Fatalf("expected joyful, got %s", response.NewState.StateName)
+	}
+
+	select {
+	case md := <-testSvc.metadataCh:
+		if got := md.Get(traceIDMetadataKey); len(got) != 1 || got[0] != "req-123" {
+			t.Fatalf("expected %s metadata to be propagated, got %v", traceIDMetadataKey, got)
+		}
+	default:
+		t.Fatal("expected incoming metadata to be captured")
 	}
 }

@@ -8,7 +8,7 @@ use emotion_engine::proto::{
     FuseScoresRequest, MemoryForPromotion, ProcessInteractionRequest, ScoreCandidate,
     SusceptibilityMatrix, TransitionStateRequest,
 };
-use emotion_engine::{EmotionEngineServer, FILE_DESCRIPTOR_SET};
+use emotion_engine::{attach_trace_context, EmotionEngineServer, FILE_DESCRIPTOR_SET};
 use std::error::Error;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
@@ -37,9 +37,13 @@ async fn spawn_client() -> Result<
         .build_v1()?;
 
     let handle = tokio::spawn(async move {
+        let service = tonic::service::interceptor::InterceptedService::new(
+            EmotionEngineServiceServer::new(engine),
+            attach_trace_context,
+        );
         Server::builder()
             .add_service(reflection)
-            .add_service(EmotionEngineServiceServer::new(engine))
+            .add_service(service)
             .serve_with_incoming_shutdown(incoming, async move {
                 let _ = shutdown_rx.await;
             })

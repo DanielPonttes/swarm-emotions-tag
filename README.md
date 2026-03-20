@@ -144,6 +144,7 @@ No orquestrador:
 
 - Os contratos Protobuf estao versionados em `v1` e ja reservam faixas de campos para evolucao.
 - O codigo Go gerado a partir dos protos e versionado em `orchestrator/pkg/proto`.
+- O `request_id` HTTP do orquestrador agora e propagado ao `emotion-engine` via metadata gRPC `x-trace-id`; os logs do servico Rust passam a incluir `trace_id` e `traceparent` quando presentes.
 - O `emotion-engine` Rust ja possui implementacao real e cobertura via `cargo test`,
   `cargo clippy` e `cargo bench`.
 - O `orchestrator` Go ja possui API funcional com mocks, cobertura via `go test`

@@ -9,6 +9,7 @@ import (
 	"github.com/swarm-emotions/orchestrator/internal/connector"
 	"github.com/swarm-emotions/orchestrator/internal/model"
 	"github.com/swarm-emotions/orchestrator/internal/observability"
+	"github.com/swarm-emotions/orchestrator/internal/tracectx"
 )
 
 type Executor interface {
@@ -134,11 +135,12 @@ func (o *Orchestrator) Execute(ctx context.Context, input Input) (*Output, error
 
 		o.observe("step8_postprocess_dispatch")
 		stepStart = time.Now()
+		backgroundCtx := tracectx.Detach(runCtx)
 		o.runBackground(func() {
 			o.observe("step8_postprocess")
 			backgroundStart := time.Now()
 			o.stepPostProcess(
-				context.Background(),
+				backgroundCtx,
 				input,
 				llmResponse,
 				prepared.fsmResult,
@@ -188,11 +190,12 @@ func (o *Orchestrator) ExecuteStream(ctx context.Context, input Input, callbacks
 
 		o.observe("step8_postprocess_dispatch")
 		stepStart = time.Now()
+		backgroundCtx := tracectx.Detach(runCtx)
 		o.runBackground(func() {
 			o.observe("step8_postprocess")
 			backgroundStart := time.Now()
 			o.stepPostProcess(
-				context.Background(),
+				backgroundCtx,
 				input,
 				llmResponse,
 				prepared.fsmResult,

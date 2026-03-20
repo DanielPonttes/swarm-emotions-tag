@@ -9,6 +9,7 @@ import (
 	"github.com/swarm-emotions/orchestrator/internal/connector"
 	"github.com/swarm-emotions/orchestrator/internal/model"
 	"github.com/swarm-emotions/orchestrator/internal/pipeline"
+	"github.com/swarm-emotions/orchestrator/internal/tracectx"
 )
 
 func (h *Handlers) Interact(w http.ResponseWriter, r *http.Request) {
@@ -23,7 +24,8 @@ func (h *Handlers) Interact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.executeInteraction(r.Context(), req)
+	traceID := chimiddleware.GetReqID(r.Context())
+	result, err := h.executeInteraction(tracectx.WithTraceID(r.Context(), traceID), req)
 	if err != nil {
 		if connector.IsDependencyUnavailable(err) {
 			respondError(w, r, http.StatusServiceUnavailable, connector.ErrDependencyUnavailable.Error())
@@ -39,7 +41,7 @@ func (h *Handlers) Interact(w http.ResponseWriter, r *http.Request) {
 		FsmState:     result.NewFsmState.StateName,
 		Intensity:    result.NewIntensity,
 		LatencyMs:    result.LatencyMs,
-		TraceID:      chimiddleware.GetReqID(r.Context()),
+		TraceID:      traceID,
 	})
 }
 
@@ -71,6 +73,7 @@ func (h *Handlers) InteractStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 
 	traceID := chimiddleware.GetReqID(r.Context())
+	streamCtx := tracectx.WithTraceID(r.Context(), traceID)
 	callbacks := pipeline.StreamCallbacks{
 		OnMetadata: func(meta pipeline.StreamMetadata) error {
 			return writeSSE(w, flusher, "metadata", map[string]any{
@@ -87,7 +90,7 @@ func (h *Handlers) InteractStream(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	result, err := streamer.ExecuteStream(r.Context(), interactionInput(req), callbacks)
+	result, err := streamer.ExecuteStream(streamCtx, interactionInput(req), callbacks)
 	if err != nil {
 		_ = writeSSE(w, flusher, "error", map[string]any{
 			"error":      err.Error(),
@@ -103,7 +106,8 @@ func (h *Handlers) InteractStream(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) respondInteractionJSON(w http.ResponseWriter, r *http.Request, req model.InteractionRequest) {
-	result, err := h.executeInteraction(r.Context(), req)
+	traceID := chimiddleware.GetReqID(r.Context())
+	result, err := h.executeInteraction(tracectx.WithTraceID(r.Context(), traceID), req)
 	if err != nil {
 		if connector.IsDependencyUnavailable(err) {
 			respondError(w, r, http.StatusServiceUnavailable, connector.ErrDependencyUnavailable.Error())
@@ -119,7 +123,7 @@ func (h *Handlers) respondInteractionJSON(w http.ResponseWriter, r *http.Request
 		FsmState:     result.NewFsmState.StateName,
 		Intensity:    result.NewIntensity,
 		LatencyMs:    result.LatencyMs,
-		TraceID:      chimiddleware.GetReqID(r.Context()),
+		TraceID:      traceID,
 	})
 }
 

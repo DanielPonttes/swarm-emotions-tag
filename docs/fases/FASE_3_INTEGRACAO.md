@@ -90,6 +90,14 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 use opentelemetry::propagation::TextMapPropagator;
 ```
 
+**Status atual no codigo (2026-03-19):**
+- O HTTP `request_id` do orquestrador e preservado no `context.Context`.
+- O client Go injeta `x-trace-id` no metadata gRPC para todas as RPCs ao `emotion-engine`.
+- O `emotion-engine` aplica interceptor tonic para capturar `x-trace-id`/`traceparent`
+  e inclui esses campos nos spans/logs de cada RPC.
+- O pos-processamento assincrono do orquestrador preserva o mesmo `trace_id`, evitando
+  perder correlacao nas chamadas ao Rust feitas fora do request HTTP sincrono.
+
 ### 3.2.3 Error Handling Cross-Language
 
 Mapear erros Rust para gRPC status codes consistentes:
@@ -582,11 +590,11 @@ func TestLatency_PipelineWithoutLLM(t *testing.T) {
 
 > **Status atualizado em 2026-03-19 com base no codigo e nos testes do repositório**
 >
-> **Resumo:** classificacao Python, cache/fallback e parte da resiliencia estao implementados; a integracao gRPC existe sobre TCP, e os itens de E2E/observabilidade distribuida ainda seguem pendentes.
+> **Resumo:** classificacao Python, cache/fallback e parte da resiliencia estao implementados; a integracao gRPC existe sobre TCP, a propagacao basica de trace Go -> Rust ja esta ligada, e os itens de E2E/observabilidade distribuida completa ainda seguem pendentes.
 
 ### Integracao gRPC
 - [ ] Go conecta ao Rust via Unix domain socket
-- [ ] Trace IDs propagam de Go para Rust (visivel nos logs)
+- [x] Trace IDs propagam de Go para Rust (visivel nos logs)
 - [ ] Erros Rust aparecem como gRPC status codes adequados no Go
 - [ ] Todas as 5 RPCs funcionam Go -> Rust
 - [ ] ProcessInteraction batch executa FSM + vector + fusion em 1 chamada
@@ -680,7 +688,7 @@ controlada antes de evoluir para streaming, traces distribuidos e tuning fino.
 ### 3.7.4 Pendencias ainda abertas da Fase 3
 
 - Python classifier real ja esta preparado, mas ainda depende de execucao com extras `ml` e validacao E2E no ambiente alvo.
-- Trace distribuido Go -> Rust ainda nao foi ligado.
+- Trace distribuido Go -> Rust ja foi ligado via metadata gRPC (`x-trace-id`), mas o trecho completo ate Python/OpenTelemetry ainda segue pendente.
 - Transporte Go -> Rust ainda usa TCP; Unix socket segue pendente.
 - Suite E2E single-agent com LLM real ainda nao foi implementada.
 

@@ -1,5 +1,7 @@
 use emotion_engine::proto::emotion_engine_service_server::EmotionEngineServiceServer;
-use emotion_engine::{grpc_addr_from_env, EmotionEngineServer, FILE_DESCRIPTOR_SET};
+use emotion_engine::{
+    attach_trace_context, grpc_addr_from_env, EmotionEngineServer, FILE_DESCRIPTOR_SET,
+};
 use tonic::transport::Server;
 use tracing_subscriber::EnvFilter;
 
@@ -17,10 +19,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let reflection_service = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(FILE_DESCRIPTOR_SET)
         .build_v1()?;
+    let emotion_service = tonic::service::interceptor::InterceptedService::new(
+        EmotionEngineServiceServer::new(engine),
+        attach_trace_context,
+    );
 
     Server::builder()
         .add_service(reflection_service)
-        .add_service(EmotionEngineServiceServer::new(engine))
+        .add_service(emotion_service)
         .serve_with_shutdown(addr, async {
             if let Err(error) = tokio::signal::ctrl_c().await {
                 tracing::error!(?error, "failed to listen for shutdown signal");

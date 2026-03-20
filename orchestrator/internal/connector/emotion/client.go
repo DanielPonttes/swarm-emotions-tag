@@ -7,10 +7,14 @@ import (
 
 	"github.com/swarm-emotions/orchestrator/internal/connector"
 	"github.com/swarm-emotions/orchestrator/internal/model"
+	"github.com/swarm-emotions/orchestrator/internal/tracectx"
 	pb "github.com/swarm-emotions/orchestrator/pkg/proto/emotion_engine/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 )
+
+const traceIDMetadataKey = "x-trace-id"
 
 type Client struct {
 	conn   *grpc.ClientConn
@@ -39,6 +43,7 @@ func (c *Client) Close() error {
 func (c *Client) TransitionState(ctx context.Context, req *connector.TransitionRequest) (*connector.TransitionResponse, error) {
 	callCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel()
+	callCtx = withTraceMetadata(callCtx)
 	resp, err := c.client.TransitionState(callCtx, &pb.TransitionStateRequest{
 		CurrentState:   toProtoState(req.CurrentState),
 		Stimulus:       req.Stimulus,
@@ -58,6 +63,7 @@ func (c *Client) TransitionState(ctx context.Context, req *connector.TransitionR
 func (c *Client) ComputeEmotionVector(ctx context.Context, req *connector.ComputeRequest) (*connector.ComputeResponse, error) {
 	callCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel()
+	callCtx = withTraceMetadata(callCtx)
 	resp, err := c.client.ComputeEmotionVector(callCtx, &pb.ComputeEmotionVectorRequest{
 		CurrentEmotion: toProtoVector(req.CurrentEmotion),
 		Trigger:        toProtoVector(req.Trigger),
@@ -83,6 +89,7 @@ func (c *Client) ComputeEmotionVector(ctx context.Context, req *connector.Comput
 func (c *Client) FuseScores(ctx context.Context, req *connector.FuseRequest) (*connector.FuseResponse, error) {
 	callCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel()
+	callCtx = withTraceMetadata(callCtx)
 	candidates := make([]*pb.ScoreCandidate, 0, len(req.Candidates))
 	for _, candidate := range req.Candidates {
 		candidates = append(candidates, &pb.ScoreCandidate{
@@ -121,6 +128,7 @@ func (c *Client) FuseScores(ctx context.Context, req *connector.FuseRequest) (*c
 func (c *Client) EvaluatePromotion(ctx context.Context, req *connector.PromotionRequest) (*connector.PromotionResponse, error) {
 	callCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel()
+	callCtx = withTraceMetadata(callCtx)
 	memories := make([]*pb.MemoryForPromotion, 0, len(req.Candidates))
 	for _, candidate := range req.Candidates {
 		memories = append(memories, &pb.MemoryForPromotion{
@@ -155,6 +163,7 @@ func (c *Client) EvaluatePromotion(ctx context.Context, req *connector.Promotion
 func (c *Client) ProcessInteraction(ctx context.Context, req *connector.ProcessRequest) (*connector.ProcessResponse, error) {
 	callCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel()
+	callCtx = withTraceMetadata(callCtx)
 	scoreCandidates := make([]*pb.ScoreCandidate, 0, len(req.ScoreCandidates))
 	for _, candidate := range req.ScoreCandidates {
 		scoreCandidates = append(scoreCandidates, &pb.ScoreCandidate{
@@ -232,6 +241,18 @@ func (c *Client) ProcessInteraction(ctx context.Context, req *connector.ProcessR
 
 func toProtoVector(v model.EmotionVector) *pb.EmotionVector {
 	return &pb.EmotionVector{Components: append([]float32(nil), v.Components...)}
+}
+
+func withTraceMetadata(ctx context.Context) context.Context {
+	if traceID := tracectx.TraceID(ctx); traceID != "" {
+		if md, ok := metadata.FromOutgoingContext(ctx); ok {
+			if values := md.Get(traceIDMetadataKey); len(values) > 0 && values[0] != "" {
+				return ctx
+			}
+		}
+		return metadata.AppendToOutgoingContext(ctx, traceIDMetadataKey, traceID)
+	}
+	return ctx
 }
 
 func toProtoState(s model.FsmState) *pb.FsmState {

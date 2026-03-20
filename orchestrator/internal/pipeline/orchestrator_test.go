@@ -287,6 +287,54 @@ func TestPostProcessStoresConversationTurnsInWorkingMemory(t *testing.T) {
 	}
 }
 
+func TestPostProcessPromotesHighIntensityInteractionToVectorStore(t *testing.T) {
+	store := &spyVectorStore{}
+	orchestrator := New(
+		emotion.NewMockClient(),
+		store,
+		cache.NewMockClient(),
+		db.NewMockClient(),
+		llm.NewMockProvider(),
+		classifier.NewMockClient(),
+	)
+
+	orchestrator.stepPostProcess(
+		context.Background(),
+		Input{AgentID: "agent-promote", Text: "Preciso resolver isso urgentemente."},
+		"Vou priorizar o diagnóstico e te passar os passos críticos.",
+		&FSMResult{
+			NewEmotion:   model.EmotionVector{Components: []float32{-0.4, 0.9, -0.2, 0.1, 0.0, 0.2}},
+			NewFsmState:  model.FsmState{StateName: "anxious", MacroState: "negative"},
+			NewIntensity: 0.95,
+			Stimulus:     "urgency",
+		},
+		[]model.RankedMemory{{MemoryID: "memory-1", FinalScore: 0.82, Content: "Earlier escalation path"}},
+		model.DefaultCognitiveContext("agent-promote"),
+		FindEmotionDirective(model.EmotionVector{Components: []float32{-0.4, 0.9, -0.2, 0.1, 0.0, 0.2}}),
+	)
+
+	if len(store.memories) != 1 {
+		t.Fatalf("expected one promoted memory, got %d", len(store.memories))
+	}
+
+	memory := store.memories[0]
+	if memory.AgentID != "agent-promote" {
+		t.Fatalf("expected agent id to round-trip, got %q", memory.AgentID)
+	}
+	if memory.MemoryLevel != 2 {
+		t.Fatalf("expected promoted memory level 2, got %d", memory.MemoryLevel)
+	}
+	if memory.Intensity != 0.95 {
+		t.Fatalf("expected promoted intensity 0.95, got %f", memory.Intensity)
+	}
+	if !strings.Contains(memory.Content, "User: Preciso resolver isso urgentemente.") {
+		t.Fatalf("expected stored content to include user turn, got %q", memory.Content)
+	}
+	if !strings.Contains(memory.Content, "Assistant: Vou priorizar o diagnóstico") {
+		t.Fatalf("expected stored content to include assistant turn, got %q", memory.Content)
+	}
+}
+
 type slowVectorStore struct {
 	delay time.Duration
 }
@@ -299,6 +347,10 @@ func (s slowVectorStore) QuerySemantic(_ context.Context, _ connector.QuerySeman
 func (s slowVectorStore) QueryEmotional(_ context.Context, _ connector.QueryEmotionalParams) ([]model.MemoryHit, error) {
 	time.Sleep(s.delay)
 	return []model.MemoryHit{{MemoryID: "emotional-1", Content: "emotional", EmotionalScore: 0.7}}, nil
+}
+
+func (s slowVectorStore) UpsertMemory(context.Context, model.StoredMemory) error {
+	return nil
 }
 
 type slowDB struct {
@@ -344,4 +396,21 @@ func (s *spyReporter) IncDependencyError(string, string) {}
 func (s *spyReporter) ObserveToneCompliance(directive string, score float64) {
 	s.directive = directive
 	s.toneScore = score
+}
+
+type spyVectorStore struct {
+	memories []model.StoredMemory
+}
+
+func (s *spyVectorStore) QuerySemantic(context.Context, connector.QuerySemanticParams) ([]model.MemoryHit, error) {
+	return nil, nil
+}
+
+func (s *spyVectorStore) QueryEmotional(context.Context, connector.QueryEmotionalParams) ([]model.MemoryHit, error) {
+	return nil, nil
+}
+
+func (s *spyVectorStore) UpsertMemory(_ context.Context, memory model.StoredMemory) error {
+	s.memories = append(s.memories, memory)
+	return nil
 }

@@ -37,6 +37,18 @@ type WorkingMemoryEntry struct {
 	CreatedAtMs int64   `json:"created_at_ms"`
 }
 
+type StoredMemory struct {
+	MemoryID          string        `json:"memory_id"`
+	AgentID           string        `json:"agent_id"`
+	Content           string        `json:"content"`
+	Emotion           EmotionVector `json:"emotion"`
+	Intensity         float32       `json:"intensity"`
+	CognitiveScore    float32       `json:"cognitive_score"`
+	MemoryLevel       uint32        `json:"memory_level"`
+	IsPseudopermanent bool          `json:"is_pseudopermanent"`
+	CreatedAtMs       int64         `json:"created_at_ms"`
+}
+
 type PromotionCandidate struct {
 	MemoryID         string  `json:"memory_id"`
 	Intensity        float32 `json:"intensity"`

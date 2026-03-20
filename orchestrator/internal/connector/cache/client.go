@@ -16,9 +16,11 @@ import (
 )
 
 const (
-	stateKeyPrefix         = "emotion_state:"
-	workingMemoryKeyPrefix = "working_memory:"
-	lockKeyPrefix          = "agent_lock:"
+	stateKeyPrefix             = "emotion_state:"
+	workingMemoryKeyPrefix     = "working_memory:"
+	lockKeyPrefix              = "agent_lock:"
+	defaultWorkingMemoryTTL    = 5 * time.Minute
+	defaultWorkingMemoryWindow = 12
 )
 
 var releaseLockScript = redis.NewScript(`
@@ -28,16 +30,44 @@ end
 return 0
 `)
 
+var pushWorkingMemoryScript = redis.NewScript(`
+redis.call("ZADD", KEYS[1], ARGV[1], ARGV[2])
+local count = redis.call("ZCARD", KEYS[1])
+local max_entries = tonumber(ARGV[3])
+if count > max_entries then
+	redis.call("ZREMRANGEBYRANK", KEYS[1], 0, count - max_entries - 1)
+end
+redis.call("PEXPIRE", KEYS[1], ARGV[4])
+return count
+`)
+
+type ClientConfig struct {
+	WorkingMemoryTTL        time.Duration
+	WorkingMemoryMaxEntries int
+}
+
 type Client struct {
 	rdb *redis.Client
 
-	lockMu     sync.Mutex
-	lockTokens map[string]string
-	metrics    observability.Reporter
-	retry      resilience.RetryPolicy
+	workingMemoryTTL        time.Duration
+	workingMemoryMaxEntries int
+	lockMu                  sync.Mutex
+	lockTokens              map[string]string
+	metrics                 observability.Reporter
+	retry                   resilience.RetryPolicy
 }
 
 func NewClient(addr string) *Client {
+	return NewClientWithConfig(addr, ClientConfig{})
+}
+
+func NewClientWithConfig(addr string, cfg ClientConfig) *Client {
+	if cfg.WorkingMemoryTTL <= 0 {
+		cfg.WorkingMemoryTTL = defaultWorkingMemoryTTL
+	}
+	if cfg.WorkingMemoryMaxEntries <= 0 {
+		cfg.WorkingMemoryMaxEntries = defaultWorkingMemoryWindow
+	}
 	return &Client{
 		rdb: redis.NewClient(&redis.Options{
 			Addr:         addr,
@@ -46,8 +76,10 @@ func NewClient(addr string) *Client {
 			WriteTimeout: 150 * time.Millisecond,
 			PoolTimeout:  500 * time.Millisecond,
 		}),
-		lockTokens: make(map[string]string),
-		metrics:    observability.NewNoopReporter(),
+		workingMemoryTTL:        cfg.WorkingMemoryTTL,
+		workingMemoryMaxEntries: cfg.WorkingMemoryMaxEntries,
+		lockTokens:              make(map[string]string),
+		metrics:                 observability.NewNoopReporter(),
 		retry: resilience.RetryPolicy{
 			Attempts:  2,
 			BaseDelay: 5 * time.Millisecond,
@@ -162,10 +194,16 @@ func (c *Client) PushWorkingMemory(ctx context.Context, agentID string, entry mo
 	err = resilience.Do(ctx, c.retry, func(attemptCtx context.Context) error {
 		callCtx, cancel := context.WithTimeout(attemptCtx, 100*time.Millisecond)
 		defer cancel()
-		return c.rdb.ZAdd(callCtx, workingMemoryKey(agentID), redis.Z{
-			Score:  float64(entry.CreatedAtMs),
-			Member: string(payload),
-		}).Err()
+		_, execErr := pushWorkingMemoryScript.Run(
+			callCtx,
+			c.rdb,
+			[]string{workingMemoryKey(agentID)},
+			entry.CreatedAtMs,
+			string(payload),
+			c.workingMemoryMaxEntries,
+			c.workingMemoryTTL.Milliseconds(),
+		).Result()
+		return execErr
 	})
 	if err != nil {
 		c.metrics.IncDependencyError("redis", "push_working_memory")

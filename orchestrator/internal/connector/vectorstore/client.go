@@ -3,6 +3,7 @@ package vectorstore
 import (
 	"bytes"
 	"context"
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -137,6 +138,77 @@ func (c *Client) QueryEmotional(ctx context.Context, params connector.QueryEmoti
 	return c.search(ctx, vector, params.AgentID, normalizeLimit(params.TopK), false)
 }
 
+func (c *Client) UpsertMemory(ctx context.Context, memory model.StoredMemory) error {
+	if strings.TrimSpace(memory.MemoryID) == "" {
+		return fmt.Errorf("memory_id is required")
+	}
+	if strings.TrimSpace(memory.AgentID) == "" {
+		return fmt.Errorf("agent_id is required")
+	}
+	if strings.TrimSpace(memory.Content) == "" {
+		return fmt.Errorf("content is required")
+	}
+	if memory.MemoryLevel == 0 {
+		memory.MemoryLevel = 1
+	}
+	if memory.CreatedAtMs == 0 {
+		memory.CreatedAtMs = time.Now().UnixMilli()
+	}
+
+	payload, err := json.Marshal(map[string]any{
+		"points": []map[string]any{
+			{
+				"id":     memory.MemoryID,
+				"vector": blendVectors(textEmbedding(memory.Content, 6), ensureDimension(memory.Emotion.Components, 6)),
+				"payload": map[string]any{
+					"agent_id":           memory.AgentID,
+					"memory_id":          memory.MemoryID,
+					"content":            memory.Content,
+					"content_text":       memory.Content,
+					"content_hash":       contentHash(memory.Content),
+					"cognitive_score":    memory.CognitiveScore,
+					"intensity":          memory.Intensity,
+					"memory_level":       memory.MemoryLevel,
+					"is_pseudopermanent": memory.IsPseudopermanent,
+					"access_count":       0,
+					"created_at":         memory.CreatedAtMs,
+					"last_accessed_at":   memory.CreatedAtMs,
+				},
+			},
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	err = resilience.Do(ctx, c.retry, func(attemptCtx context.Context) error {
+		callCtx, cancel := context.WithTimeout(attemptCtx, 350*time.Millisecond)
+		defer cancel()
+
+		url := fmt.Sprintf("%s/collections/%s/points?wait=true", c.baseURL, c.collection)
+		req, err := http.NewRequestWithContext(callCtx, http.MethodPut, url, bytes.NewReader(payload))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.http.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode >= 400 {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+			return fmt.Errorf("qdrant upsert failed with %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		}
+		return nil
+	})
+	if err != nil {
+		c.metrics.IncDependencyError("qdrant", "upsert_memory")
+	}
+	return err
+}
+
 func (c *Client) search(ctx context.Context, vector []float32, agentID string, limit int, semantic bool) ([]model.MemoryHit, error) {
 	reqBody := searchRequest{
 		Vector:      vector,
@@ -190,7 +262,7 @@ func (c *Client) search(ctx context.Context, vector []float32, agentID string, l
 		for _, point := range decoded.Result {
 			hit := model.MemoryHit{
 				MemoryID:          resolveMemoryID(point.ID, point.Payload),
-				Content:           readString(point.Payload["content"]),
+				Content:           firstNonEmptyString(point.Payload["content"], point.Payload["content_text"]),
 				CognitiveScore:    readFloat32(point.Payload["cognitive_score"]),
 				MemoryLevel:       readUint32(point.Payload["memory_level"]),
 				IsPseudopermanent: readBool(point.Payload["is_pseudopermanent"]),
@@ -333,6 +405,37 @@ func textEmbedding(text string, dimension int) []float32 {
 	return embedding
 }
 
+func blendVectors(vectors ...[]float32) []float32 {
+	size := 0
+	for _, vector := range vectors {
+		if len(vector) > size {
+			size = len(vector)
+		}
+	}
+	if size == 0 {
+		return nil
+	}
+
+	out := make([]float32, size)
+	for _, vector := range vectors {
+		for i, value := range vector {
+			out[i] += value
+		}
+	}
+	var norm float64
+	for _, value := range out {
+		norm += float64(value * value)
+	}
+	if norm == 0 {
+		return out
+	}
+	scale := float32(1 / math.Sqrt(norm))
+	for i := range out {
+		out[i] *= scale
+	}
+	return out
+}
+
 func resolveMemoryID(id any, payload map[string]any) string {
 	if payloadID := readString(payload["memory_id"]); payloadID != "" {
 		return payloadID
@@ -345,6 +448,20 @@ func resolveMemoryID(id any, payload map[string]any) string {
 	default:
 		return ""
 	}
+}
+
+func contentHash(content string) string {
+	sum := sha1.Sum([]byte(content))
+	return fmt.Sprintf("%x", sum[:])
+}
+
+func firstNonEmptyString(values ...any) string {
+	for _, value := range values {
+		if text := readString(value); text != "" {
+			return text
+		}
+	}
+	return ""
 }
 
 func readString(value any) string {

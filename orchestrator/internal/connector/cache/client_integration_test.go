@@ -109,4 +109,54 @@ func TestClientIntegration_StateLockAndWorkingMemory(t *testing.T) {
 	if entries[0].Role != "assistant" || entries[1].Role != "user" {
 		t.Fatalf("expected roles to round-trip, got %#v", entries)
 	}
+
+	for i := 0; i < 20; i++ {
+		if err := client.PushWorkingMemory(ctx, agentID, model.WorkingMemoryEntry{
+			MemoryID:    testutil.UniqueID("wm"),
+			Role:        "assistant",
+			Content:     "recent memory",
+			CreatedAtMs: time.Now().Add(time.Duration(i) * time.Millisecond).UnixMilli(),
+		}); err != nil {
+			t.Fatalf("push working memory for prune check: %v", err)
+		}
+	}
+
+	prunedEntries, err := client.GetWorkingMemory(ctx, agentID)
+	if err != nil {
+		t.Fatalf("get pruned working memory: %v", err)
+	}
+	if len(prunedEntries) != 12 {
+		t.Fatalf("expected working memory to be pruned to 12 entries, got %d", len(prunedEntries))
+	}
+}
+
+func TestClientIntegration_WorkingMemoryExpiresAfterTTL(t *testing.T) {
+	redisAddr := testutil.EnvOrDefault("REDIS_ADDR", "127.0.0.1:6379")
+	testutil.RequireTCP(t, redisAddr)
+
+	client := cache.NewClientWithConfig(redisAddr, cache.ClientConfig{
+		WorkingMemoryTTL: 150 * time.Millisecond,
+	})
+	defer client.Close()
+
+	ctx := context.Background()
+	agentID := testutil.UniqueID("it-redis-ttl")
+
+	if err := client.PushWorkingMemory(ctx, agentID, model.WorkingMemoryEntry{
+		MemoryID: "mem-ttl",
+		Role:     "assistant",
+		Content:  "expires soon",
+	}); err != nil {
+		t.Fatalf("push working memory: %v", err)
+	}
+
+	time.Sleep(250 * time.Millisecond)
+
+	entries, err := client.GetWorkingMemory(ctx, agentID)
+	if err != nil {
+		t.Fatalf("get working memory after ttl: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected working memory to expire, got %d entries", len(entries))
+	}
 }

@@ -111,6 +111,57 @@ func TestClientIntegration_QuerySemanticAndEmotional(t *testing.T) {
 	}
 }
 
+func TestClientIntegration_UpsertMemoryMakesPromotedMemoryQueryable(t *testing.T) {
+	rawQdrantAddr := testutil.EnvOrDefault("QDRANT_ADDR", "127.0.0.1:6333")
+	hostPort, err := testutil.ExtractHostPort(rawQdrantAddr, "6333")
+	if err != nil {
+		t.Fatalf("extract qdrant host: %v", err)
+	}
+	if strings.HasSuffix(hostPort, ":6334") {
+		hostPort = strings.TrimSuffix(hostPort, ":6334") + ":6333"
+	}
+	testutil.RequireTCP(t, hostPort)
+
+	collection := testutil.UniqueID("it-qdrant-upsert")
+	client, err := vectorstore.NewClient(rawQdrantAddr, collection)
+	if err != nil {
+		t.Fatalf("new vectorstore client: %v", err)
+	}
+
+	ctx := context.Background()
+	agentID := testutil.UniqueID("agent-upsert")
+	memory := model.StoredMemory{
+		MemoryID:       testutil.UniqueID("mem"),
+		AgentID:        agentID,
+		Content:        "deadline escalation and mitigation steps",
+		Emotion:        model.EmotionVector{Components: []float32{-0.2, 0.9, -0.1, 0.1, 0.0, 0.2}},
+		Intensity:      0.95,
+		CognitiveScore: 0.81,
+		MemoryLevel:    2,
+		CreatedAtMs:    time.Now().UnixMilli(),
+	}
+
+	if err := client.UpsertMemory(ctx, memory); err != nil {
+		t.Fatalf("upsert memory: %v", err)
+	}
+
+	semanticHits, err := waitForSemanticHits(ctx, client, agentID)
+	if err != nil {
+		t.Fatalf("semantic query after upsert: %v", err)
+	}
+	if !containsMemory(semanticHits, memory.MemoryID) {
+		t.Fatalf("expected semantic hits to include promoted memory %q, got %#v", memory.MemoryID, semanticHits)
+	}
+
+	emotionalHits, err := waitForEmotionalHits(ctx, client, agentID)
+	if err != nil {
+		t.Fatalf("emotional query after upsert: %v", err)
+	}
+	if !containsMemory(emotionalHits, memory.MemoryID) {
+		t.Fatalf("expected emotional hits to include promoted memory %q, got %#v", memory.MemoryID, emotionalHits)
+	}
+}
+
 func upsertPoints(baseURL, collection string, points []map[string]any) error {
 	body, err := json.Marshal(map[string]any{
 		"points": points,
@@ -177,4 +228,13 @@ func waitForEmotionalHits(ctx context.Context, client *vectorstore.Client, agent
 		return nil, lastErr
 	}
 	return nil, nil
+}
+
+func containsMemory(hits []model.MemoryHit, memoryID string) bool {
+	for _, hit := range hits {
+		if hit.MemoryID == memoryID {
+			return true
+		}
+	}
+	return false
 }

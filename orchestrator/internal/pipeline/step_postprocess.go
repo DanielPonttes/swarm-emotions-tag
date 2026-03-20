@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -26,24 +27,6 @@ func (o *Orchestrator) stepPostProcess(
 	} else {
 		measureToneCompliance(directive, responseEmotion, o.metrics)
 	}
-
-	promotionCandidates := make([]model.PromotionCandidate, 0, len(ranked))
-	for _, item := range ranked {
-		promotionCandidates = append(promotionCandidates, model.PromotionCandidate{
-			MemoryID:         item.MemoryID,
-			Intensity:        fsmResult.NewIntensity,
-			CurrentLevel:     1,
-			AccessFrequency:  1,
-			ValenceMagnitude: absFloat32(firstComponent(fsmResult.NewEmotion)),
-		})
-	}
-
-	_, _ = o.emotionClient.EvaluatePromotion(ctx, &connector.PromotionRequest{
-		Candidates:         promotionCandidates,
-		IntensityThreshold: 0.9,
-		FrequencyThreshold: 10,
-		ValenceThreshold:   0.8,
-	})
 
 	_ = o.db.LogInteraction(ctx, &model.InteractionLog{
 		AgentID:      input.AgentID,
@@ -79,6 +62,7 @@ func (o *Orchestrator) stepPostProcess(
 		Score:       fsmResult.NewIntensity,
 		CreatedAtMs: now + 1,
 	})
+	persistPromotedInteractionMemory(ctx, o, input, llmResponse, fsmResult, ranked, now)
 
 	nextContext := model.DefaultCognitiveContext(input.AgentID)
 	if cognitive != nil {
@@ -122,4 +106,75 @@ func buildWorkingSummary(inputText, llmResponse string, ranked []model.RankedMem
 		return "No cognitive notes"
 	}
 	return strings.Join(parts, " | ")
+}
+
+func persistPromotedInteractionMemory(
+	ctx context.Context,
+	orchestrator *Orchestrator,
+	input Input,
+	llmResponse string,
+	fsmResult *FSMResult,
+	ranked []model.RankedMemory,
+	now int64,
+) {
+	memoryID := fmt.Sprintf("%s-turn-%d", input.AgentID, now)
+	promotion, err := orchestrator.emotionClient.EvaluatePromotion(ctx, &connector.PromotionRequest{
+		Candidates: []model.PromotionCandidate{
+			{
+				MemoryID:         memoryID,
+				Intensity:        fsmResult.NewIntensity,
+				CurrentLevel:     1,
+				AccessFrequency:  1,
+				ValenceMagnitude: absFloat32(firstComponent(fsmResult.NewEmotion)),
+			},
+		},
+		IntensityThreshold: 0.9,
+		FrequencyThreshold: 10,
+		ValenceThreshold:   0.8,
+	})
+	if err != nil || promotion == nil || len(promotion.Decisions) == 0 {
+		return
+	}
+
+	decision := promotion.Decisions[0]
+	if !decision.ShouldPromote || decision.TargetLevel < 2 {
+		return
+	}
+
+	_ = orchestrator.vectorStore.UpsertMemory(ctx, model.StoredMemory{
+		MemoryID:          memoryID,
+		AgentID:           input.AgentID,
+		Content:           buildInteractionMemoryContent(input.Text, llmResponse),
+		Emotion:           fsmResult.NewEmotion,
+		Intensity:         fsmResult.NewIntensity,
+		CognitiveScore:    promotedMemoryCognitiveScore(ranked, fsmResult.NewIntensity),
+		MemoryLevel:       decision.TargetLevel,
+		IsPseudopermanent: decision.TargetLevel >= 3,
+		CreatedAtMs:       now,
+	})
+}
+
+func buildInteractionMemoryContent(inputText, llmResponse string) string {
+	parts := make([]string, 0, 2)
+	if trimmed := strings.TrimSpace(inputText); trimmed != "" {
+		parts = append(parts, "User: "+trimmed)
+	}
+	if trimmed := strings.TrimSpace(llmResponse); trimmed != "" {
+		parts = append(parts, "Assistant: "+trimmed)
+	}
+	return strings.Join(parts, "\n")
+}
+
+func promotedMemoryCognitiveScore(ranked []model.RankedMemory, intensity float32) float32 {
+	score := intensity
+	if len(ranked) > 0 && ranked[0].FinalScore > score {
+		score = ranked[0].FinalScore
+	}
+	if score < 0 {
+		return 0
+	}
+	if score > 1 {
+		return 1
+	}
+	return score
 }

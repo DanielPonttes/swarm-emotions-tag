@@ -11,17 +11,33 @@ import (
 )
 
 type MockClient struct {
-	mu            sync.RWMutex
-	states        map[string]*model.AgentState
-	workingMemory map[string][]model.WorkingMemoryEntry
-	locks         map[string]time.Time
+	mu                      sync.RWMutex
+	states                  map[string]*model.AgentState
+	workingMemory           map[string][]model.WorkingMemoryEntry
+	workingMemoryExpiry     map[string]time.Time
+	workingMemoryTTL        time.Duration
+	workingMemoryMaxEntries int
+	locks                   map[string]time.Time
 }
 
 func NewMockClient() *MockClient {
+	return NewMockClientWithConfig(ClientConfig{})
+}
+
+func NewMockClientWithConfig(cfg ClientConfig) *MockClient {
+	if cfg.WorkingMemoryTTL <= 0 {
+		cfg.WorkingMemoryTTL = defaultWorkingMemoryTTL
+	}
+	if cfg.WorkingMemoryMaxEntries <= 0 {
+		cfg.WorkingMemoryMaxEntries = defaultWorkingMemoryWindow
+	}
 	return &MockClient{
-		states:        make(map[string]*model.AgentState),
-		workingMemory: make(map[string][]model.WorkingMemoryEntry),
-		locks:         make(map[string]time.Time),
+		states:                  make(map[string]*model.AgentState),
+		workingMemory:           make(map[string][]model.WorkingMemoryEntry),
+		workingMemoryExpiry:     make(map[string]time.Time),
+		workingMemoryTTL:        cfg.WorkingMemoryTTL,
+		workingMemoryMaxEntries: cfg.WorkingMemoryMaxEntries,
+		locks:                   make(map[string]time.Time),
 	}
 }
 
@@ -52,8 +68,11 @@ func (c *MockClient) SetAgentState(_ context.Context, agentID string, state *mod
 }
 
 func (c *MockClient) GetWorkingMemory(_ context.Context, agentID string) ([]model.WorkingMemoryEntry, error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.clearExpiredWorkingMemoryLocked(agentID, time.Now())
+
 	entries := c.workingMemory[agentID]
 	out := make([]model.WorkingMemoryEntry, len(entries))
 	copy(out, entries)
@@ -66,7 +85,14 @@ func (c *MockClient) GetWorkingMemory(_ context.Context, agentID string) ([]mode
 func (c *MockClient) PushWorkingMemory(_ context.Context, agentID string, entry model.WorkingMemoryEntry) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.workingMemory[agentID] = append(c.workingMemory[agentID], entry)
+
+	c.clearExpiredWorkingMemoryLocked(agentID, time.Now())
+	if entry.CreatedAtMs == 0 {
+		entry.CreatedAtMs = time.Now().UnixMilli()
+	}
+	entries := append(c.workingMemory[agentID], entry)
+	c.workingMemory[agentID] = pruneWorkingMemoryEntries(entries, c.workingMemoryMaxEntries)
+	c.workingMemoryExpiry[agentID] = time.Now().Add(c.workingMemoryTTL)
 	return nil
 }
 
@@ -88,4 +114,36 @@ func (c *MockClient) ReleaseAgentLock(_ context.Context, agentID string) error {
 	}
 	delete(c.locks, agentID)
 	return nil
+}
+
+func pruneWorkingMemoryEntries(entries []model.WorkingMemoryEntry, limit int) []model.WorkingMemoryEntry {
+	if limit <= 0 || len(entries) == 0 {
+		return nil
+	}
+
+	out := make([]model.WorkingMemoryEntry, len(entries))
+	copy(out, entries)
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CreatedAtMs == out[j].CreatedAtMs {
+			return out[i].MemoryID > out[j].MemoryID
+		}
+		return out[i].CreatedAtMs > out[j].CreatedAtMs
+	})
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out
+}
+
+func (c *MockClient) workingMemoryExpiredLocked(agentID string, now time.Time) bool {
+	expiresAt, ok := c.workingMemoryExpiry[agentID]
+	return ok && !now.Before(expiresAt)
+}
+
+func (c *MockClient) clearExpiredWorkingMemoryLocked(agentID string, now time.Time) {
+	if !c.workingMemoryExpiredLocked(agentID, now) {
+		return
+	}
+	delete(c.workingMemory, agentID)
+	delete(c.workingMemoryExpiry, agentID)
 }

@@ -129,6 +129,7 @@ type EmotionEngineClient interface {
 type VectorStoreClient interface {
 	QuerySemantic(ctx context.Context, params QuerySemanticParams) ([]model.MemoryHit, error)
 	QueryEmotional(ctx context.Context, params QueryEmotionalParams) ([]model.MemoryHit, error)
+	UpsertMemory(ctx context.Context, memory model.StoredMemory) error
 }
 
 type CacheClient interface {

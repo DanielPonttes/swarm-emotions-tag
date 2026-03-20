@@ -679,6 +679,10 @@ inicial em `Qwen/Qwen3.5-27B`, sem bloquear o restante do pipeline E2E.
   - duas execucoes limpas com os mesmos 20 inputs
   - comparacao exata da sequencia de estados entre os dois runs
   - falha imediata se a historia emocional divergir
+- Suite comportamental `make phase3-behavioral-qwen-local` validando:
+  - cenarios isolados para `urgency`, `mild_criticism`, `severe_criticism`, `success`, `resolution`, `empathy`, `user_frustration` e `boredom`
+  - transicoes reais de FSM em agentes limpos contra Python + Rust + Qwen local
+  - consistencia entre `/state`, `/history`, Redis e Postgres em cada rota exercitada
 - Suite `integration` do connector `emotion` ampliada para validar:
   - `Ready` + 5 RPCs com status reais `INVALID_ARGUMENT`, `UNAVAILABLE`, `PERMISSION_DENIED`, `RESOURCE_EXHAUSTED`, `UNAUTHENTICATED`, `DEADLINE_EXCEEDED` e `INTERNAL`
   - mapeamento do circuit breaker para `dependency_unavailable` apenas nos codigos transitorios
@@ -717,8 +721,8 @@ controlada antes de evoluir para streaming, traces distribuidos e tuning fino.
 - A correlacao basica por `x-trace-id` ja aparece nos logs do Go, Rust e Python, mas a instrumentacao completa via OpenTelemetry ainda segue pendente.
 - O fluxo validado com Ollama local atualmente roda de forma mais direta com `orchestrator` no host; manter `orchestrator` no compose e o modelo no host ainda depende de conectividade da bridge Docker ate `11434`.
 - Transporte Go -> Rust no compose ja usa Unix socket; o listener TCP foi mantido apenas para desenvolvimento no host e compatibilidade com scripts atuais.
-- O connector Go do `emotion-engine` agora possui suite `integration` cobrindo `Ready`, as 5 RPCs, codigos reais de erro e o mapeamento transitorio do circuit breaker; o que ainda falta e ampliar cenarios comportamentais de mais alto nivel.
-- Existem smoke E2E, suite multi-turno e regressao deterministica local com Qwen via `make phase3-smoke-qwen-local`, `make phase3-multiturn-qwen-local` e `make phase3-determinism-qwen-local`; o que ainda falta e ampliar a cobertura de cenarios comportamentais.
+- O connector Go do `emotion-engine` agora possui suite `integration` cobrindo `Ready`, as 5 RPCs, codigos reais de erro e o mapeamento transitorio do circuit breaker; o que ainda falta e ampliar validacao com OpenTelemetry real e o classifier `transformers` no ambiente alvo.
+- Existem smoke E2E, suite multi-turno, regressao deterministica e matriz comportamental local com Qwen via `make phase3-smoke-qwen-local`, `make phase3-multiturn-qwen-local`, `make phase3-determinism-qwen-local` e `make phase3-behavioral-qwen-local`; o que ainda falta e ampliar a cobertura com classifier real e cenarios de carga sem LLM.
 
 ---
 

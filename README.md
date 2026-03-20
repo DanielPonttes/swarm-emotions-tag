@@ -152,6 +152,18 @@ Esse alvo executa o mesmo roteiro de 20 turnos duas vezes, em agentes limpos e
 com exatamente os mesmos inputs, e falha se a sequencia de estados diferir entre
 as duas execucoes.
 
+Tambem existe uma matriz comportamental para cobrir rotas adicionais da FSM:
+
+```bash
+make phase3-behavioral-qwen-local
+```
+
+Esse alvo valida cenarios isolados como `urgency -> anxious`,
+`mild_criticism -> empathetic`, `severe_criticism -> worried`,
+`curious -> joyful` via `success`, `worried -> empathetic` via `empathy`,
+`frustrated -> calm` via `resolution`, `calm -> neutral` via `boredom` e
+`empathetic -> anxious` via `user_frustration`.
+
 Observacao importante: neste host, o caminho validado foi `Ollama no host` +
 `orchestrator no host` + dependencias reais em Docker (`emotion-engine`,
 `python-ml`, Redis, Postgres e Qdrant). Rodar o `orchestrator` no compose e o

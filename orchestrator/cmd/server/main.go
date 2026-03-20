@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -24,6 +25,8 @@ import (
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
+	runtimeCtx, cancelRuntime := context.WithCancel(context.Background())
+	defer cancelRuntime()
 
 	cfg := config.Load()
 	metricsReporter := observability.NewPrometheusReporter(prometheus.DefaultRegisterer)
@@ -178,6 +181,12 @@ func main() {
 		TopK:            cfg.LLMTopK,
 		PresencePenalty: cfg.LLMPresencePenalty,
 		EnableThinking:  cfg.LLMEnableThinking,
+	})
+	vectorstore.StartMemoryGC(runtimeCtx, vectorStoreClient, vectorstore.GCConfig{
+		Interval:               time.Duration(cfg.MemoryGCIntervalSec) * time.Second,
+		L2MaxAge:               time.Duration(cfg.MemoryGCL2TTLHours) * time.Hour,
+		L2AccessCountThreshold: uint32(cfg.MemoryGCAccessThreshold),
+		BatchSize:              cfg.MemoryGCBatchSize,
 	})
 	handlers := api.NewHandlers(
 		orchestrator,

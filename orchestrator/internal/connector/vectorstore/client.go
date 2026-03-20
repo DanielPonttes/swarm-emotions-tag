@@ -46,16 +46,22 @@ type scrollRequest struct {
 }
 
 type qdrantFilter struct {
-	Must []qdrantMatch `json:"must,omitempty"`
+	Must []qdrantCondition `json:"must,omitempty"`
 }
 
-type qdrantMatch struct {
-	Key   string               `json:"key"`
-	Match qdrantMatchCondition `json:"match"`
+type qdrantCondition struct {
+	Key   string                `json:"key"`
+	Match *qdrantMatchCondition `json:"match,omitempty"`
+	Range *qdrantRangeCondition `json:"range,omitempty"`
 }
 
 type qdrantMatchCondition struct {
 	Value any `json:"value"`
+}
+
+type qdrantRangeCondition struct {
+	Lt  any `json:"lt,omitempty"`
+	Lte any `json:"lte,omitempty"`
 }
 
 type searchResponse struct {
@@ -146,12 +152,12 @@ func (c *Client) SetMetricsReporter(reporter observability.Reporter) {
 
 func (c *Client) QuerySemantic(ctx context.Context, params connector.QuerySemanticParams) ([]model.MemoryHit, error) {
 	vector := textEmbedding(params.Text, 6)
-	return c.search(ctx, vector, params.AgentID, normalizeLimit(params.TopK), true)
+	return c.search(ctx, vector, params.AgentID, normalizeSearchLimit(params.TopK), true)
 }
 
 func (c *Client) QueryEmotional(ctx context.Context, params connector.QueryEmotionalParams) ([]model.MemoryHit, error) {
 	vector := ensureDimension(params.EmotionVector.Components, 6)
-	return c.search(ctx, vector, params.AgentID, normalizeLimit(params.TopK), false)
+	return c.search(ctx, vector, params.AgentID, normalizeSearchLimit(params.TopK), false)
 }
 
 func (c *Client) UpsertMemory(ctx context.Context, memory model.StoredMemory) error {
@@ -284,71 +290,37 @@ func (c *Client) TouchMemories(ctx context.Context, touches []model.MemoryAccess
 }
 
 func (c *Client) GetMemoriesByLevel(ctx context.Context, agentID string, level uint32, limit int) ([]model.StoredMemory, error) {
-	if strings.TrimSpace(agentID) == "" {
-		return nil, fmt.Errorf("agent_id is required")
-	}
 	if level == 0 {
 		return nil, fmt.Errorf("memory level is required")
 	}
 
-	reqBody := scrollRequest{
-		Limit:       normalizeLimit(limit),
-		WithPayload: true,
-		Filter: &qdrantFilter{
-			Must: []qdrantMatch{
-				{Key: "agent_id", Match: qdrantMatchCondition{Value: agentID}},
-				{Key: "memory_level", Match: qdrantMatchCondition{Value: level}},
-			},
+	must := []qdrantCondition{
+		{
+			Key:   "memory_level",
+			Match: &qdrantMatchCondition{Value: level},
 		},
 	}
+	if strings.TrimSpace(agentID) != "" {
+		must = append(must, qdrantCondition{
+			Key:   "agent_id",
+			Match: &qdrantMatchCondition{Value: agentID},
+		})
+	}
 
-	payload, err := json.Marshal(reqBody)
+	memories, err := c.scrollMemories(ctx, scrollRequest{
+		Limit:       normalizeScrollLimit(limit),
+		WithPayload: true,
+		Filter: &qdrantFilter{
+			Must: must,
+		},
+	}, "get_memories_by_level")
 	if err != nil {
 		return nil, err
 	}
-
-	memories, err := resilience.DoValue(ctx, c.retry, func(attemptCtx context.Context) ([]model.StoredMemory, error) {
-		callCtx, cancel := context.WithTimeout(attemptCtx, 350*time.Millisecond)
-		defer cancel()
-		url := fmt.Sprintf("%s/collections/%s/points/scroll", c.baseURL, c.collection)
-		req, err := http.NewRequestWithContext(callCtx, http.MethodPost, url, bytes.NewReader(payload))
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Content-Type", "application/json")
-
-		resp, err := c.http.Do(req)
-		if err != nil {
-			return nil, err
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode >= 400 {
-			body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-			return nil, fmt.Errorf("qdrant scroll failed with %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-		}
-
-		var decoded scrollResponse
-		if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
-			return nil, err
-		}
-
-		out := make([]model.StoredMemory, 0, len(decoded.Result.Points))
-		for _, point := range decoded.Result.Points {
-			memory := decodeStoredMemory(point)
-			if memory.MemoryID == "" {
-				continue
-			}
-			out = append(out, memory)
-		}
-		sort.SliceStable(out, func(i, j int) bool {
-			return out[i].CreatedAtMs > out[j].CreatedAtMs
-		})
-		return out, nil
+	sort.SliceStable(memories, func(i, j int) bool {
+		return memories[i].CreatedAtMs > memories[j].CreatedAtMs
 	})
-	if err != nil {
-		c.metrics.IncDependencyError("qdrant", "get_memories_by_level")
-	}
-	return memories, err
+	return memories, nil
 }
 
 func (c *Client) UpdateMemoryLevel(ctx context.Context, memoryID string, level uint32) error {
@@ -397,18 +369,82 @@ func (c *Client) UpdateMemoryLevel(ctx context.Context, memoryID string, level u
 	return err
 }
 
+func (c *Client) DeleteStaleMemories(ctx context.Context, params connector.MemoryGCParams) ([]model.StoredMemory, error) {
+	if params.Level == 0 {
+		return nil, fmt.Errorf("memory level is required")
+	}
+	if params.CreatedBeforeMs == 0 {
+		return nil, fmt.Errorf("created_before_ms is required")
+	}
+
+	must := []qdrantCondition{
+		{
+			Key:   "memory_level",
+			Match: &qdrantMatchCondition{Value: params.Level},
+		},
+		{
+			Key:   "created_at",
+			Range: &qdrantRangeCondition{Lte: params.CreatedBeforeMs},
+		},
+	}
+	if params.AccessCountBelow > 0 {
+		must = append(must, qdrantCondition{
+			Key:   "access_count",
+			Range: &qdrantRangeCondition{Lt: params.AccessCountBelow},
+		})
+	}
+
+	memories, err := c.scrollMemories(ctx, scrollRequest{
+		Limit:       normalizeScrollLimit(params.Limit),
+		WithPayload: true,
+		Filter: &qdrantFilter{
+			Must: must,
+		},
+	}, "delete_stale_memories")
+	if err != nil {
+		return nil, err
+	}
+	if len(memories) == 0 {
+		return nil, nil
+	}
+
+	sort.SliceStable(memories, func(i, j int) bool {
+		return memories[i].CreatedAtMs < memories[j].CreatedAtMs
+	})
+
+	pointIDs := make([]string, 0, len(memories))
+	deleted := make([]model.StoredMemory, 0, len(memories))
+	for _, memory := range memories {
+		pointID := pointIDForMemory(memory)
+		if pointID == "" {
+			continue
+		}
+		pointIDs = append(pointIDs, pointID)
+		deleted = append(deleted, memory)
+	}
+	if len(pointIDs) == 0 {
+		return nil, nil
+	}
+
+	if err := c.deletePoints(ctx, pointIDs); err != nil {
+		c.metrics.IncDependencyError("qdrant", "delete_stale_memories")
+		return nil, err
+	}
+	return deleted, nil
+}
+
 func (c *Client) search(ctx context.Context, vector []float32, agentID string, limit int, semantic bool) ([]model.MemoryHit, error) {
 	reqBody := searchRequest{
 		Vector:      vector,
-		Limit:       limit,
+		Limit:       normalizeSearchLimit(limit),
 		WithPayload: true,
 	}
 	if agentID != "" {
 		reqBody.Filter = &qdrantFilter{
-			Must: []qdrantMatch{
+			Must: []qdrantCondition{
 				{
 					Key: "agent_id",
-					Match: qdrantMatchCondition{
+					Match: &qdrantMatchCondition{
 						Value: agentID,
 					},
 				},
@@ -506,6 +542,85 @@ func decodeStoredMemory(point searchPoint) model.StoredMemory {
 	return memory
 }
 
+func (c *Client) scrollMemories(ctx context.Context, reqBody scrollRequest, operation string) ([]model.StoredMemory, error) {
+	payload, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	memories, err := resilience.DoValue(ctx, c.retry, func(attemptCtx context.Context) ([]model.StoredMemory, error) {
+		callCtx, cancel := context.WithTimeout(attemptCtx, 350*time.Millisecond)
+		defer cancel()
+		url := fmt.Sprintf("%s/collections/%s/points/scroll", c.baseURL, c.collection)
+		req, err := http.NewRequestWithContext(callCtx, http.MethodPost, url, bytes.NewReader(payload))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.http.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode >= 400 {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+			return nil, fmt.Errorf("qdrant scroll failed with %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		}
+
+		var decoded scrollResponse
+		if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+			return nil, err
+		}
+
+		out := make([]model.StoredMemory, 0, len(decoded.Result.Points))
+		for _, point := range decoded.Result.Points {
+			memory := decodeStoredMemory(point)
+			if memory.MemoryID == "" {
+				continue
+			}
+			out = append(out, memory)
+		}
+		return out, nil
+	})
+	if err != nil {
+		c.metrics.IncDependencyError("qdrant", operation)
+		return nil, err
+	}
+	return memories, nil
+}
+
+func (c *Client) deletePoints(ctx context.Context, pointIDs []string) error {
+	payload, err := json.Marshal(map[string]any{
+		"points": pointIDs,
+	})
+	if err != nil {
+		return err
+	}
+
+	return resilience.Do(ctx, c.retry, func(attemptCtx context.Context) error {
+		callCtx, cancel := context.WithTimeout(attemptCtx, 350*time.Millisecond)
+		defer cancel()
+		url := fmt.Sprintf("%s/collections/%s/points/delete?wait=true", c.baseURL, c.collection)
+		req, err := http.NewRequestWithContext(callCtx, http.MethodPost, url, bytes.NewReader(payload))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.http.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode >= 400 {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+			return fmt.Errorf("qdrant delete points failed with %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		}
+		return nil
+	})
+}
+
 func (c *Client) ensureCollection(ctx context.Context) error {
 	payload := map[string]any{
 		"vectors": map[string]any{
@@ -580,12 +695,20 @@ func normalizeBaseURL(addr string) (string, error) {
 	return strings.TrimRight(parsed.String(), "/"), nil
 }
 
-func normalizeLimit(limit int) int {
+func normalizeSearchLimit(limit int) int {
+	return clampLimit(limit, 10, 100)
+}
+
+func normalizeScrollLimit(limit int) int {
+	return clampLimit(limit, 100, 1000)
+}
+
+func clampLimit(limit, fallback, max int) int {
 	if limit <= 0 {
-		return 10
+		return fallback
 	}
-	if limit > 100 {
-		return 100
+	if limit > max {
+		return max
 	}
 	return limit
 }

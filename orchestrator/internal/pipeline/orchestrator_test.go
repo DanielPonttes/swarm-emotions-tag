@@ -419,6 +419,10 @@ func (s slowVectorStore) UpdateMemoryLevel(context.Context, string, uint32) erro
 	return nil
 }
 
+func (s slowVectorStore) DeleteStaleMemories(context.Context, connector.MemoryGCParams) ([]model.StoredMemory, error) {
+	return nil, nil
+}
+
 type slowDB struct {
 	*db.MockClient
 	delay time.Duration
@@ -518,4 +522,20 @@ func (s *spyVectorStore) UpdateMemoryLevel(_ context.Context, memoryID string, l
 		}
 	}
 	return nil
+}
+
+func (s *spyVectorStore) DeleteStaleMemories(_ context.Context, params connector.MemoryGCParams) ([]model.StoredMemory, error) {
+	deleted := make([]model.StoredMemory, 0)
+	kept := make([]model.StoredMemory, 0, len(s.memories))
+	for _, memory := range s.memories {
+		if memory.MemoryLevel == params.Level &&
+			memory.CreatedAtMs <= params.CreatedBeforeMs &&
+			(params.AccessCountBelow == 0 || memory.AccessCount < params.AccessCountBelow) {
+			deleted = append(deleted, memory)
+			continue
+		}
+		kept = append(kept, memory)
+	}
+	s.memories = kept
+	return deleted, nil
 }

@@ -225,6 +225,70 @@ func (c *MockClient) UpdateMemoryLevel(_ context.Context, memoryID string, level
 	return fmt.Errorf("memory %s not found", memoryID)
 }
 
+func (c *MockClient) DeleteStaleMemories(_ context.Context, params connector.MemoryGCParams) ([]model.StoredMemory, error) {
+	if params.Level == 0 {
+		return nil, fmt.Errorf("memory level is required")
+	}
+	if params.CreatedBeforeMs == 0 {
+		return nil, fmt.Errorf("created_before_ms is required")
+	}
+
+	type candidate struct {
+		agentID string
+		memory  model.StoredMemory
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	candidates := make([]candidate, 0)
+	for agentID, items := range c.memories {
+		for _, memory := range items {
+			if memory.MemoryLevel != params.Level {
+				continue
+			}
+			if memory.CreatedAtMs > params.CreatedBeforeMs {
+				continue
+			}
+			if params.AccessCountBelow > 0 && memory.AccessCount >= params.AccessCountBelow {
+				continue
+			}
+			candidates = append(candidates, candidate{agentID: agentID, memory: memory})
+		}
+	}
+
+	sort.SliceStable(candidates, func(i, j int) bool {
+		return candidates[i].memory.CreatedAtMs < candidates[j].memory.CreatedAtMs
+	})
+	if limit := normalizeScrollLimit(params.Limit); len(candidates) > limit {
+		candidates = candidates[:limit]
+	}
+
+	selected := make(map[string]struct{}, len(candidates))
+	deleted := make([]model.StoredMemory, 0, len(candidates))
+	for _, candidate := range candidates {
+		selected[memorySelectionKey(candidate.agentID, pointIDForMemory(candidate.memory))] = struct{}{}
+		deleted = append(deleted, candidate.memory)
+	}
+
+	for agentID, items := range c.memories {
+		kept := make([]model.StoredMemory, 0, len(items))
+		for _, memory := range items {
+			if _, ok := selected[memorySelectionKey(agentID, pointIDForMemory(memory))]; ok {
+				continue
+			}
+			kept = append(kept, memory)
+		}
+		c.memories[agentID] = kept
+	}
+
+	return deleted, nil
+}
+
+func memorySelectionKey(agentID, pointID string) string {
+	return agentID + "|" + pointID
+}
+
 func minFloat32(a, b float32) float32 {
 	if a < b {
 		return a

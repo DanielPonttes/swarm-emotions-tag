@@ -29,6 +29,10 @@ type Config struct {
 	LLMEnableThinking         bool
 	UseMockConnectors         bool
 	DefaultTimeoutSec         int
+	MemoryGCIntervalSec       int
+	MemoryGCL2TTLHours        int
+	MemoryGCAccessThreshold   int
+	MemoryGCBatchSize         int
 }
 
 func Load() Config {
@@ -56,6 +60,10 @@ func Load() Config {
 		LLMEnableThinking:         getEnvBool("LLM_ENABLE_THINKING", false),
 		UseMockConnectors:         getEnvBool("USE_MOCK_CONNECTORS", false),
 		DefaultTimeoutSec:         getEnvInt("DEFAULT_TIMEOUT_SEC", 30),
+		MemoryGCIntervalSec:       getEnvInt("MEMORY_GC_INTERVAL_SEC", 3600),
+		MemoryGCL2TTLHours:        getEnvInt("MEMORY_GC_L2_TTL_HOURS", 168),
+		MemoryGCAccessThreshold:   getEnvInt("MEMORY_GC_ACCESS_THRESHOLD", 3),
+		MemoryGCBatchSize:         getEnvInt("MEMORY_GC_BATCH_SIZE", 100),
 	}
 }
 

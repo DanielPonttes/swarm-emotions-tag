@@ -293,6 +293,113 @@ func TestClientIntegration_TouchMemoriesUpdatesAccessMetadata(t *testing.T) {
 	}
 }
 
+func TestClientIntegration_DeleteStaleMemoriesRemovesExpiredL2Only(t *testing.T) {
+	rawQdrantAddr := testutil.EnvOrDefault("QDRANT_ADDR", "127.0.0.1:6333")
+	hostPort, err := testutil.ExtractHostPort(rawQdrantAddr, "6333")
+	if err != nil {
+		t.Fatalf("extract qdrant host: %v", err)
+	}
+	if strings.HasSuffix(hostPort, ":6334") {
+		hostPort = strings.TrimSuffix(hostPort, ":6334") + ":6333"
+	}
+	testutil.RequireTCP(t, hostPort)
+
+	collection := testutil.UniqueID("it-qdrant-gc")
+	client, err := vectorstore.NewClient(rawQdrantAddr, collection)
+	if err != nil {
+		t.Fatalf("new vectorstore client: %v", err)
+	}
+
+	ctx := context.Background()
+	now := time.Now()
+	agentA := testutil.UniqueID("agent-gc-a")
+	agentB := testutil.UniqueID("agent-gc-b")
+	memories := []model.StoredMemory{
+		{
+			MemoryID:         testutil.UniqueID("mem-expired-a"),
+			AgentID:          agentA,
+			Content:          "expired low-access L2 memory",
+			MemoryLevel:      2,
+			AccessCount:      1,
+			CreatedAtMs:      now.Add(-8 * 24 * time.Hour).UnixMilli(),
+			LastAccessedAtMs: now.Add(-8 * 24 * time.Hour).UnixMilli(),
+		},
+		{
+			MemoryID:         testutil.UniqueID("mem-expired-b"),
+			AgentID:          agentB,
+			Content:          "another expired low-access L2 memory",
+			MemoryLevel:      2,
+			AccessCount:      2,
+			CreatedAtMs:      now.Add(-9 * 24 * time.Hour).UnixMilli(),
+			LastAccessedAtMs: now.Add(-9 * 24 * time.Hour).UnixMilli(),
+		},
+		{
+			MemoryID:         testutil.UniqueID("mem-frequent"),
+			AgentID:          agentA,
+			Content:          "expired but frequently accessed L2 memory",
+			MemoryLevel:      2,
+			AccessCount:      3,
+			CreatedAtMs:      now.Add(-8 * 24 * time.Hour).UnixMilli(),
+			LastAccessedAtMs: now.Add(-2 * time.Hour).UnixMilli(),
+		},
+		{
+			MemoryID:          testutil.UniqueID("mem-l3"),
+			AgentID:           agentA,
+			Content:           "expired L3 memory",
+			MemoryLevel:       3,
+			IsPseudopermanent: true,
+			AccessCount:       0,
+			CreatedAtMs:       now.Add(-30 * 24 * time.Hour).UnixMilli(),
+			LastAccessedAtMs:  now.Add(-30 * 24 * time.Hour).UnixMilli(),
+		},
+	}
+	for _, memory := range memories {
+		if err := client.UpsertMemory(ctx, memory); err != nil {
+			t.Fatalf("upsert memory %s: %v", memory.MemoryID, err)
+		}
+	}
+
+	deleted, err := client.DeleteStaleMemories(ctx, connector.MemoryGCParams{
+		Level:            2,
+		CreatedBeforeMs:  now.Add(-7 * 24 * time.Hour).UnixMilli(),
+		AccessCountBelow: 3,
+		Limit:            10,
+	})
+	if err != nil {
+		t.Fatalf("delete stale memories: %v", err)
+	}
+	if len(deleted) != 2 {
+		t.Fatalf("expected 2 deleted memories, got %d (%#v)", len(deleted), deleted)
+	}
+
+	l2AgentA, err := client.GetMemoriesByLevel(ctx, agentA, 2, 10)
+	if err != nil {
+		t.Fatalf("get L2 memories for agent A: %v", err)
+	}
+	if findStoredMemory(l2AgentA, memories[0].MemoryID) != nil {
+		t.Fatalf("expected expired low-access memory for agent A to be deleted")
+	}
+	if findStoredMemory(l2AgentA, memories[2].MemoryID) == nil {
+		t.Fatalf("expected frequently accessed expired memory for agent A to remain")
+	}
+
+	l2AgentB, err := client.GetMemoriesByLevel(ctx, agentB, 2, 10)
+	if err != nil {
+		t.Fatalf("get L2 memories for agent B: %v", err)
+	}
+	if findStoredMemory(l2AgentB, memories[1].MemoryID) != nil {
+		t.Fatalf("expected expired low-access memory for agent B to be deleted")
+	}
+
+	l3AgentA, err := client.GetMemoriesByLevel(ctx, agentA, 3, 10)
+	if err != nil {
+		t.Fatalf("get L3 memories for agent A: %v", err)
+	}
+	if findStoredMemory(l3AgentA, memories[3].MemoryID) == nil {
+		t.Fatalf("expected L3 memory to remain after GC")
+	}
+}
+
 func upsertPoints(baseURL, collection string, points []map[string]any) error {
 	body, err := json.Marshal(map[string]any{
 		"points": points,

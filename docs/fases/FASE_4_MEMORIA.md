@@ -552,7 +552,7 @@ func TestDecayReducesScoreOverTime(t *testing.T) {
 
 > **Status atualizado em 2026-03-19 com base no codigo e nos testes do repositório**
 >
-> **Resumo:** o read path basico de memoria esta pronto para Qdrant/Redis reais, mas a hierarquia completa L1/L2/L3, named vectors, decaimento e GC ainda nao foram implementados.
+> **Resumo:** o read path de memoria, a hierarquia L1/L2/L3, o decaimento lazy e o GC basico de L2 ja estao implementados; ainda faltam named vectors, indices de payload dedicados e metas de performance.
 
 ### Qdrant
 - [ ] Collection `agent_memories` criada com named vectors (semantic 768d + emotional 6d)
@@ -576,9 +576,9 @@ func TestDecayReducesScoreOverTime(t *testing.T) {
 - [x] Re-ordenacao apos decaimento mantida
 
 ### GC
-- [ ] GC periodico remove memorias L2 expiradas
-- [ ] L3 nao e afetado por GC
-- [ ] Logging de memorias removidas
+- [x] GC periodico remove memorias L2 expiradas
+- [x] L3 nao e afetado por GC
+- [x] Logging de memorias removidas
 
 ### Performance
 - [ ] Query paralela (semantico + emocional) < 30ms no Qdrant

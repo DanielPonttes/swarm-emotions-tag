@@ -94,6 +94,13 @@ type QueryEmotionalParams struct {
 	TopK          int
 }
 
+type MemoryGCParams struct {
+	Level            uint32
+	CreatedBeforeMs  int64
+	AccessCountBelow uint32
+	Limit            int
+}
+
 type GenerateOpts struct {
 	Model           string
 	SystemPrompt    string
@@ -133,6 +140,7 @@ type VectorStoreClient interface {
 	TouchMemories(ctx context.Context, touches []model.MemoryAccessUpdate, accessedAtMs int64) error
 	GetMemoriesByLevel(ctx context.Context, agentID string, level uint32, limit int) ([]model.StoredMemory, error)
 	UpdateMemoryLevel(ctx context.Context, memoryID string, level uint32) error
+	DeleteStaleMemories(ctx context.Context, params MemoryGCParams) ([]model.StoredMemory, error)
 }
 
 type CacheClient interface {

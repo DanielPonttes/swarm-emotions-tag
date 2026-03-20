@@ -41,6 +41,7 @@ services:
       GRPC_PORT: 50051
       GRPC_SOCKET_PATH: /var/run/emotion-engine/engine.sock
       RUST_LOG: info,emotion_engine=debug
+      EMOTION_ENGINE_ENABLE_TEST_STATUS_CODES: ${EMOTION_ENGINE_ENABLE_TEST_STATUS_CODES:-false}
     volumes:
       - grpc_socket:/var/run/emotion-engine
     depends_on:

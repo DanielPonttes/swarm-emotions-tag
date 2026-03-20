@@ -24,6 +24,8 @@ use tonic::{Request, Response, Status};
 const DEFAULT_FSM_CONFIG_PATH: &str = "config/default_fsm.toml";
 pub const TRACE_ID_METADATA_KEY: &str = "x-trace-id";
 pub const TRACEPARENT_METADATA_KEY: &str = "traceparent";
+pub const TEST_STATUS_METADATA_KEY: &str = "x-test-emotion-engine-status";
+pub const TEST_STATUS_MESSAGE_METADATA_KEY: &str = "x-test-emotion-engine-message";
 
 #[derive(Debug, Clone, Default)]
 pub struct TraceContext {
@@ -229,6 +231,23 @@ impl EmotionEngineServer {
             traceparent = tracing::field::display(trace.traceparent.as_deref().unwrap_or("")),
         )
     }
+
+    fn maybe_inject_test_status<T>(request: &Request<T>) -> Result<(), Status> {
+        if !grpc_test_status_injection_enabled() {
+            return Ok(());
+        }
+
+        if let Some(status) = injected_status_from_metadata(request.metadata())? {
+            tracing::warn!(
+                code = %status.code(),
+                message = %status.message(),
+                "injecting grpc status for test request"
+            );
+            return Err(status);
+        }
+
+        Ok(())
+    }
 }
 
 fn metadata_value(metadata: &MetadataMap, key: &str) -> Option<String> {
@@ -245,6 +264,42 @@ pub fn capture_trace_context(metadata: &MetadataMap) -> TraceContext {
         trace_id: metadata_value(metadata, TRACE_ID_METADATA_KEY),
         traceparent: metadata_value(metadata, TRACEPARENT_METADATA_KEY),
     }
+}
+
+fn injected_status_from_metadata(metadata: &MetadataMap) -> Result<Option<Status>, Status> {
+    let raw_code = match metadata_value(metadata, TEST_STATUS_METADATA_KEY) {
+        Some(value) => value,
+        None => return Ok(None),
+    };
+    let normalized = raw_code.trim().to_ascii_lowercase().replace('-', "_");
+    let compact = normalized.replace('_', "");
+    let message = metadata_value(metadata, TEST_STATUS_MESSAGE_METADATA_KEY)
+        .unwrap_or_else(|| format!("injected test status: {normalized}"));
+
+    let status = match (normalized.as_str(), compact.as_str()) {
+        ("unavailable", _) => Status::unavailable(message),
+        ("deadline_exceeded", _) | (_, "deadlineexceeded") => Status::deadline_exceeded(message),
+        ("resource_exhausted", _) | (_, "resourceexhausted") => Status::resource_exhausted(message),
+        ("internal", _) => Status::internal(message),
+        ("permission_denied", _) | (_, "permissiondenied") => Status::permission_denied(message),
+        ("unauthenticated", _) => Status::unauthenticated(message),
+        ("not_found", _) | (_, "notfound") => Status::not_found(message),
+        _ => {
+            return Err(Status::invalid_argument(format!(
+                "unsupported {TEST_STATUS_METADATA_KEY}: {raw_code}"
+            )))
+        }
+    };
+
+    Ok(Some(status))
+}
+
+fn grpc_test_status_injection_enabled() -> bool {
+    std::env::var("EMOTION_ENGINE_ENABLE_TEST_STATUS_CODES")
+        .ok()
+        .map(|value| value.trim().to_ascii_lowercase())
+        .map(|value| matches!(value.as_str(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(false)
 }
 
 pub fn attach_trace_context(mut request: Request<()>) -> Result<Request<()>, Status> {
@@ -269,6 +324,7 @@ impl EmotionEngineService for EmotionEngineServer {
     ) -> Result<Response<TransitionStateResponse>, Status> {
         let span = Self::rpc_span("transition_state", &request);
         let _entered = span.enter();
+        Self::maybe_inject_test_status(&request)?;
         tracing::info!(
             agent_id = request.get_ref().agent_id,
             "handling transition_state"
@@ -291,6 +347,7 @@ impl EmotionEngineService for EmotionEngineServer {
     ) -> Result<Response<ComputeEmotionVectorResponse>, Status> {
         let span = Self::rpc_span("compute_emotion_vector", &request);
         let _entered = span.enter();
+        Self::maybe_inject_test_status(&request)?;
         tracing::info!("handling compute_emotion_vector");
         let (new_emotion, intensity) = Self::compute_emotion_from_request(&request.into_inner())?;
 
@@ -306,6 +363,7 @@ impl EmotionEngineService for EmotionEngineServer {
     ) -> Result<Response<FuseScoresResponse>, Status> {
         let span = Self::rpc_span("fuse_scores", &request);
         let _entered = span.enter();
+        Self::maybe_inject_test_status(&request)?;
         tracing::info!("handling fuse_scores");
         let request = request.into_inner();
         let candidates = Self::parse_score_candidates(&request.candidates)?;
@@ -332,6 +390,7 @@ impl EmotionEngineService for EmotionEngineServer {
     ) -> Result<Response<EvaluatePromotionResponse>, Status> {
         let span = Self::rpc_span("evaluate_promotion", &request);
         let _entered = span.enter();
+        Self::maybe_inject_test_status(&request)?;
         tracing::info!("handling evaluate_promotion");
         let request = request.into_inner();
         let candidates = Self::parse_promotion_candidates(&request.memories)?;
@@ -355,6 +414,7 @@ impl EmotionEngineService for EmotionEngineServer {
     ) -> Result<Response<ProcessInteractionResponse>, Status> {
         let span = Self::rpc_span("process_interaction", &request);
         let _entered = span.enter();
+        Self::maybe_inject_test_status(&request)?;
         tracing::info!(
             agent_id = request.get_ref().agent_id,
             "handling process_interaction"
@@ -433,10 +493,12 @@ pub fn grpc_socket_path_from_env() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::{
-        attach_trace_context, capture_trace_context, TraceContext, TRACEPARENT_METADATA_KEY,
+        attach_trace_context, capture_trace_context, injected_status_from_metadata, TraceContext,
+        TEST_STATUS_MESSAGE_METADATA_KEY, TEST_STATUS_METADATA_KEY, TRACEPARENT_METADATA_KEY,
         TRACE_ID_METADATA_KEY,
     };
-    use tonic::metadata::MetadataValue;
+    use tonic::metadata::{MetadataMap, MetadataValue};
+    use tonic::Code;
     use tonic::Request;
 
     #[test]
@@ -477,5 +539,54 @@ mod tests {
 
         assert_eq!(trace.trace_id.as_deref(), Some("req-456"));
         assert_eq!(trace.traceparent, None);
+    }
+
+    #[test]
+    fn injected_status_from_metadata_maps_supported_codes() {
+        let mut metadata = MetadataMap::new();
+        metadata.insert(
+            TEST_STATUS_METADATA_KEY,
+            MetadataValue::try_from("resource-exhausted").expect("status metadata"),
+        );
+        metadata.insert(
+            TEST_STATUS_MESSAGE_METADATA_KEY,
+            MetadataValue::try_from("quota exhausted").expect("message metadata"),
+        );
+
+        let status = injected_status_from_metadata(&metadata)
+            .expect("supported test status")
+            .expect("status should be injected");
+
+        assert_eq!(status.code(), Code::ResourceExhausted);
+        assert_eq!(status.message(), "quota exhausted");
+    }
+
+    #[test]
+    fn injected_status_from_metadata_accepts_grpc_go_code_names() {
+        let mut metadata = MetadataMap::new();
+        metadata.insert(
+            TEST_STATUS_METADATA_KEY,
+            MetadataValue::try_from("PermissionDenied").expect("status metadata"),
+        );
+
+        let status = injected_status_from_metadata(&metadata)
+            .expect("supported test status")
+            .expect("status should be injected");
+
+        assert_eq!(status.code(), Code::PermissionDenied);
+    }
+
+    #[test]
+    fn injected_status_from_metadata_rejects_unknown_codes() {
+        let mut metadata = MetadataMap::new();
+        metadata.insert(
+            TEST_STATUS_METADATA_KEY,
+            MetadataValue::try_from("boom").expect("status metadata"),
+        );
+
+        let status = injected_status_from_metadata(&metadata).expect_err("unknown code must fail");
+
+        assert_eq!(status.code(), Code::InvalidArgument);
+        assert!(status.message().contains(TEST_STATUS_METADATA_KEY));
     }
 }

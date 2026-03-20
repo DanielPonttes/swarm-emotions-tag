@@ -4,6 +4,7 @@ package emotion_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -12,10 +13,13 @@ import (
 	"github.com/swarm-emotions/orchestrator/internal/model"
 	"github.com/swarm-emotions/orchestrator/internal/testutil"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
-func TestClientIntegration_AllRPCsAndInvalidArgument(t *testing.T) {
+func requireIntegrationClient(t *testing.T) *emotion.Client {
+	t.Helper()
+
 	addr := testutil.EnvOrDefault("EMOTION_ENGINE_ADDR", "127.0.0.1:50051")
 	hostPort, err := testutil.ExtractHostPort(addr, "50051")
 	if err != nil {
@@ -27,15 +31,38 @@ func TestClientIntegration_AllRPCsAndInvalidArgument(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new emotion client: %v", err)
 	}
+
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		err = client.Ready(context.Background())
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			client.Close()
+			t.Fatalf("emotion engine did not become ready: %v", err)
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	return client
+}
+
+func injectedContext(ctx context.Context, code, message string) context.Context {
+	return metadata.AppendToOutgoingContext(
+		ctx,
+		"x-test-emotion-engine-status", code,
+		"x-test-emotion-engine-message", message,
+	)
+}
+
+func TestClientIntegration_AllRPCsAndInvalidArgument(t *testing.T) {
+	client := requireIntegrationClient(t)
 	defer client.Close()
 
 	ctx := context.Background()
 	agentID := testutil.UniqueID("it-emotion")
 	now := time.Now().UnixMilli()
-
-	if err := client.Ready(ctx); err != nil {
-		t.Fatalf("ready check: %v", err)
-	}
 
 	transition, err := client.TransitionState(ctx, &connector.TransitionRequest{
 		AgentID:      agentID,
@@ -163,5 +190,176 @@ func TestClientIntegration_AllRPCsAndInvalidArgument(t *testing.T) {
 	}
 	if got := status.Code(err); got != codes.InvalidArgument {
 		t.Fatalf("expected invalid argument status, got %s (%v)", got, err)
+	}
+}
+
+func TestClientIntegration_StatusCodes(t *testing.T) {
+	client := requireIntegrationClient(t)
+	defer client.Close()
+
+	now := time.Now().UnixMilli()
+	baseAgentID := testutil.UniqueID("it-emotion-status")
+
+	cases := []struct {
+		name    string
+		code    codes.Code
+		message string
+		call    func(context.Context) error
+	}{
+		{
+			name:    "ready_unavailable",
+			code:    codes.Unavailable,
+			message: "ready unavailable",
+			call: func(ctx context.Context) error {
+				return client.Ready(ctx)
+			},
+		},
+		{
+			name:    "transition_permission_denied",
+			code:    codes.PermissionDenied,
+			message: "transition denied",
+			call: func(ctx context.Context) error {
+				_, err := client.TransitionState(ctx, &connector.TransitionRequest{
+					AgentID:      baseAgentID + "-transition",
+					CurrentState: model.FsmState{StateName: "neutral", MacroState: "neutral", EnteredAt: now},
+					Stimulus:     "novelty",
+				})
+				return err
+			},
+		},
+		{
+			name:    "compute_resource_exhausted",
+			code:    codes.ResourceExhausted,
+			message: "compute saturated",
+			call: func(ctx context.Context) error {
+				_, err := client.ComputeEmotionVector(ctx, &connector.ComputeRequest{
+					CurrentEmotion: model.EmotionVector{Components: []float32{0.1, 0, 0, 0, 0, 0}},
+					Trigger:        model.EmotionVector{Components: []float32{0.2, 0, 0, 0, 0, 0}},
+					Baseline:       model.EmotionVector{Components: []float32{0, 0, 0, 0, 0, 0}},
+					WMatrix: []float32{
+						0.1, 0, 0, 0, 0, 0,
+						0, 0.1, 0, 0, 0, 0,
+						0, 0, 0.1, 0, 0, 0,
+						0, 0, 0, 0.1, 0, 0,
+						0, 0, 0, 0, 0.1, 0,
+						0, 0, 0, 0, 0, 0.1,
+					},
+					WDimension:  6,
+					DecayLambda: 0.1,
+					DeltaTime:   1,
+				})
+				return err
+			},
+		},
+		{
+			name:    "fuse_internal",
+			code:    codes.Internal,
+			message: "fusion failed",
+			call: func(ctx context.Context) error {
+				_, err := client.FuseScores(ctx, &connector.FuseRequest{
+					Candidates: []model.ScoreCandidate{
+						{MemoryID: "m1", SemanticScore: 0.4, EmotionalScore: 0.4, CognitiveScore: 0.4, MemoryLevel: 1},
+					},
+					Weights: model.ScoreWeights{
+						Alpha:           0.4,
+						Beta:            0.3,
+						Gamma:           0.3,
+						PseudopermBoost: 0.2,
+					},
+				})
+				return err
+			},
+		},
+		{
+			name:    "evaluate_unauthenticated",
+			code:    codes.Unauthenticated,
+			message: "auth required",
+			call: func(ctx context.Context) error {
+				_, err := client.EvaluatePromotion(ctx, &connector.PromotionRequest{
+					Candidates: []model.PromotionCandidate{
+						{MemoryID: "promo-1", Intensity: 0.95, CurrentLevel: 1, AccessFrequency: 11, ValenceMagnitude: 0.9},
+					},
+					IntensityThreshold: 0.9,
+					FrequencyThreshold: 10,
+					ValenceThreshold:   0.8,
+				})
+				return err
+			},
+		},
+		{
+			name:    "process_deadline_exceeded",
+			code:    codes.DeadlineExceeded,
+			message: "process timeout",
+			call: func(ctx context.Context) error {
+				cfg := model.DefaultAgentConfig(baseAgentID + "-process")
+				_, err := client.ProcessInteraction(ctx, &connector.ProcessRequest{
+					AgentID:        baseAgentID + "-process",
+					CurrentState:   model.FsmState{StateName: "neutral", MacroState: "neutral", EnteredAt: now},
+					CurrentEmotion: model.EmotionVector{Components: []float32{0, 0, 0, 0, 0, 0}},
+					Stimulus:       "praise",
+					StimulusVector: model.EmotionVector{Components: []float32{0.5, 0.2, 0.1, 0, 0.1, 0}},
+					Config:         cfg,
+				})
+				return err
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := injectedContext(context.Background(), tc.code.String(), tc.message)
+			err := tc.call(ctx)
+			if err == nil {
+				t.Fatalf("expected gRPC status %s", tc.code)
+			}
+			if got := status.Code(err); got != tc.code {
+				t.Fatalf("expected status %s, got %s (%v)", tc.code, got, err)
+			}
+		})
+	}
+}
+
+func TestCircuitBreakerClientIntegration_TransientStatusMapping(t *testing.T) {
+	baseClient := requireIntegrationClient(t)
+	defer baseClient.Close()
+
+	cases := []struct {
+		name string
+		code codes.Code
+	}{
+		{name: "unavailable", code: codes.Unavailable},
+		{name: "deadline_exceeded", code: codes.DeadlineExceeded},
+		{name: "resource_exhausted", code: codes.ResourceExhausted},
+		{name: "internal", code: codes.Internal},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			breaker := emotion.NewCircuitBreakerClient(baseClient, emotion.CircuitBreakerConfig{
+				FailureThreshold: 10,
+				OpenTimeout:      time.Second,
+			}, nil)
+
+			ctx := injectedContext(context.Background(), tc.code.String(), "transient integration test")
+			_, err := breaker.TransitionState(ctx, &connector.TransitionRequest{
+				AgentID:      testutil.UniqueID("it-emotion-breaker"),
+				CurrentState: model.FsmState{StateName: "neutral", MacroState: "neutral", EnteredAt: time.Now().UnixMilli()},
+				Stimulus:     "novelty",
+			})
+			if err == nil {
+				t.Fatalf("expected dependency unavailable error")
+			}
+			if !connector.IsDependencyUnavailable(err) {
+				t.Fatalf("expected dependency unavailable wrapper, got %v", err)
+			}
+
+			var depErr *connector.DependencyUnavailableError
+			if !errors.As(err, &depErr) {
+				t.Fatalf("expected DependencyUnavailableError, got %T", err)
+			}
+			if got := status.Code(depErr.Cause); got != tc.code {
+				t.Fatalf("expected wrapped gRPC status %s, got %s (%v)", tc.code, got, depErr.Cause)
+			}
+		})
 	}
 }

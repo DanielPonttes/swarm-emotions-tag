@@ -125,4 +125,28 @@ func TestIsDependencyUnavailableError(t *testing.T) {
 	if !isDependencyUnavailableError(errors.New("dial tcp timeout")) {
 		t.Fatalf("generic network-like errors should be treated as dependency unavailable")
 	}
+
+	transientStatuses := []error{
+		status.Error(codes.Unavailable, "engine unavailable"),
+		status.Error(codes.DeadlineExceeded, "deadline exceeded"),
+		status.Error(codes.ResourceExhausted, "quota exceeded"),
+		status.Error(codes.Internal, "internal error"),
+	}
+	for _, err := range transientStatuses {
+		if !isDependencyUnavailableError(err) {
+			t.Fatalf("expected transient status to be dependency unavailable: %v", err)
+		}
+	}
+
+	nonTransientStatuses := []error{
+		status.Error(codes.InvalidArgument, "bad request"),
+		status.Error(codes.PermissionDenied, "forbidden"),
+		status.Error(codes.Unauthenticated, "unauthenticated"),
+		status.Error(codes.NotFound, "not found"),
+	}
+	for _, err := range nonTransientStatuses {
+		if isDependencyUnavailableError(err) {
+			t.Fatalf("expected non-transient status to remain caller-visible: %v", err)
+		}
+	}
 }

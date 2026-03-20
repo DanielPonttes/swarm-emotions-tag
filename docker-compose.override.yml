@@ -6,6 +6,7 @@ services:
     command: cargo run
     environment:
       RUST_LOG: debug
+      EMOTION_ENGINE_ENABLE_TEST_STATUS_CODES: ${EMOTION_ENGINE_ENABLE_TEST_STATUS_CODES:-true}
     volumes:
       - ./emotion-engine:/app/emotion-engine
       - ./proto:/app/proto

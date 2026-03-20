@@ -28,6 +28,7 @@ type summary struct {
 	Failure      int64   `json:"failure"`
 	AvgLatencyMs float64 `json:"avg_latency_ms"`
 	P95LatencyMs float64 `json:"p95_latency_ms"`
+	P99LatencyMs float64 `json:"p99_latency_ms"`
 	MaxLatencyMs float64 `json:"max_latency_ms"`
 	SampleError  string  `json:"sample_error,omitempty"`
 }
@@ -95,6 +96,7 @@ func main() {
 				Failure:      failureCount.Load(),
 				AvgLatencyMs: averageLatencyMs(latencies),
 				P95LatencyMs: percentileLatencyMs(latencies, 0.95),
+				P99LatencyMs: percentileLatencyMs(latencies, 0.99),
 				MaxLatencyMs: maxLatencyMs(latencies),
 				SampleError:  loadSampleError(&firstError),
 			})
@@ -114,6 +116,7 @@ func main() {
 					Failure:      failureCount.Load(),
 					AvgLatencyMs: averageLatencyMs(latencies),
 					P95LatencyMs: percentileLatencyMs(latencies, 0.95),
+					P99LatencyMs: percentileLatencyMs(latencies, 0.99),
 					MaxLatencyMs: maxLatencyMs(latencies),
 					SampleError:  loadSampleError(&firstError),
 				})
@@ -213,7 +216,7 @@ func averageLatencyMs(latencies []time.Duration) float64 {
 	for _, latency := range latencies {
 		total += latency
 	}
-	return float64(total.Milliseconds()) + float64(total%time.Millisecond)/float64(time.Millisecond)
+	return durationToMilliseconds(total) / float64(len(latencies))
 }
 
 func percentileLatencyMs(latencies []time.Duration, percentile float64) float64 {

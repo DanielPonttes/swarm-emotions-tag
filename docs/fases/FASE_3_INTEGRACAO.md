@@ -618,7 +618,7 @@ func TestLatency_PipelineWithoutLLM(t *testing.T) {
 ### Pipeline E2E
 - [x] Pipeline completo funciona: HTTP -> Go -> Python -> Rust -> Qdrant -> LLM -> response
 - [x] Latencia < 5s por turno (com LLM real)
-- [ ] Latencia < 100ms (sem LLM)
+- [x] Latencia < 100ms (sem LLM)
 - [x] Estado emocional evolui coerentemente em 20+ turnos
 - [x] Modo deterministico: mesmos inputs -> mesmos estados
 - [x] Logs com trace distribuido completo (request ID -> Go -> Rust -> Python)
@@ -687,6 +687,11 @@ inicial em `Qwen/Qwen3.5-27B`, sem bloquear o restante do pipeline E2E.
   - rebuild do `python-ml` com extras `ml` e `CLASSIFIER_MODE=transformers`
   - `POST /classify-emotion` com vetores 6D e labels variados em textos reais
   - matriz comportamental completa da Fase 3 com classifier real + Qwen local
+- Suite `make phase3-latency-mock-local` validando:
+  - `USE_MOCK_CONNECTORS=true` + `LLM_PROVIDER=mock`
+  - `cmd/loadtest` na API HTTP local sem dependencias externas
+  - `avg`, `p95` e `p99` abaixo da meta local de latencia sem LLM
+- `cmd/loadtest` corrigido para reportar `avg_latency_ms` real e `p99_latency_ms`, evitando inflar a media com a soma total das amostras
 - Suite `integration` do connector `emotion` ampliada para validar:
   - `Ready` + 5 RPCs com status reais `INVALID_ARGUMENT`, `UNAVAILABLE`, `PERMISSION_DENIED`, `RESOURCE_EXHAUSTED`, `UNAUTHENTICATED`, `DEADLINE_EXCEEDED` e `INTERNAL`
   - mapeamento do circuit breaker para `dependency_unavailable` apenas nos codigos transitorios
@@ -726,7 +731,7 @@ controlada antes de evoluir para streaming, traces distribuidos e tuning fino.
 - O fluxo validado com Ollama local atualmente roda de forma mais direta com `orchestrator` no host; manter `orchestrator` no compose e o modelo no host ainda depende de conectividade da bridge Docker ate `11434`.
 - Transporte Go -> Rust no compose ja usa Unix socket; o listener TCP foi mantido apenas para desenvolvimento no host e compatibilidade com scripts atuais.
 - O connector Go do `emotion-engine` agora possui suite `integration` cobrindo `Ready`, as 5 RPCs, codigos reais de erro e o mapeamento transitorio do circuit breaker; o que ainda falta e ampliar validacao com OpenTelemetry real e o classifier `transformers` no ambiente alvo.
-- Existem smoke E2E, suite multi-turno, regressao deterministica, matriz comportamental e validacao com classifier `transformers` local via `make phase3-smoke-qwen-local`, `make phase3-multiturn-qwen-local`, `make phase3-determinism-qwen-local`, `make phase3-behavioral-qwen-local` e `make phase3-transformers-qwen-local`; o que ainda falta e ampliar cenarios de carga sem LLM e instrumentacao OpenTelemetry real.
+- Existem smoke E2E, suite multi-turno, regressao deterministica, matriz comportamental, validacao com classifier `transformers` local e validacao de latencia sem LLM via `make phase3-smoke-qwen-local`, `make phase3-multiturn-qwen-local`, `make phase3-determinism-qwen-local`, `make phase3-behavioral-qwen-local`, `make phase3-transformers-qwen-local` e `make phase3-latency-mock-local`; o que ainda falta e ampliar instrumentacao OpenTelemetry real e repetir as suites-chave no ambiente alvo final.
 
 ---
 

@@ -175,6 +175,19 @@ Esse alvo rebuilda o `python-ml` com `PYTHON_ML_INSTALL_EXTRAS=ml`,
 aguarda `model_loaded=true`, valida `POST /classify-emotion` com textos variados
 e depois roda a matriz comportamental completa com Qwen local.
 
+Para fechar a meta de latencia sem LLM da Fase 3, existe um alvo separado em
+modo totalmente mockado:
+
+```bash
+make phase3-latency-mock-local
+```
+
+Esse alvo sobe apenas o `orchestrator` local em `USE_MOCK_CONNECTORS=true` com
+`LLM_PROVIDER=mock`, roda um smoke request e depois executa o `cmd/loadtest`
+contra a API HTTP validando `avg`, `p95` e `p99` abaixo dos thresholds locais.
+Ele nao depende de Docker nem de Ollama e serve para medir o overhead do plano
+de controle sem o custo de Python, Rust, Qdrant ou LLM real.
+
 Observacao importante: neste host, o caminho validado foi `Ollama no host` +
 `orchestrator no host` + dependencias reais em Docker (`emotion-engine`,
 `python-ml`, Redis, Postgres e Qdrant). Rodar o `orchestrator` no compose e o

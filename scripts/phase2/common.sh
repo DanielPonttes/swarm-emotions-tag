@@ -216,6 +216,8 @@ phase2_wait_for_support() {
 }
 
 phase2_start_orchestrator() {
+  local use_mock_connectors="${USE_MOCK_CONNECTORS:-false}"
+
   PHASE2_ORCH_LOG="$(mktemp -t phase2-orchestrator.XXXXXX.log)"
   PHASE2_ORCH_BIN="$(mktemp -t phase2-orchestrator.XXXXXX.bin)"
   export PHASE2_ORCH_LOG
@@ -228,7 +230,7 @@ phase2_start_orchestrator() {
 
   (
     cd "$PHASE2_ROOT_DIR/orchestrator"
-    USE_MOCK_CONNECTORS=false \
+    USE_MOCK_CONNECTORS="$use_mock_connectors" \
       HTTP_PORT="$HTTP_PORT" \
       REDIS_ADDR="$REDIS_ADDR" \
       POSTGRES_DSN="$POSTGRES_DSN" \

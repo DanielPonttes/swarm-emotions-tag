@@ -68,6 +68,7 @@ func (o *Orchestrator) stepRetrieve(
 		decayLambda = agentConfig.DecayLambda
 	}
 	now := time.Now()
+	scheduleMemoryTouches(o, semanticResults, emotionalResults, now.UnixMilli())
 	applyDecayToHits(semanticResults, decayLambda, now, true)
 	applyDecayToHits(emotionalResults, decayLambda, now, false)
 
@@ -161,4 +162,40 @@ func adjustedDecayLambda(decayLambda float32, memoryLevel uint32) float32 {
 	default:
 		return decayLambda
 	}
+}
+
+func scheduleMemoryTouches(orchestrator *Orchestrator, semanticResults, emotionalResults []model.MemoryHit, accessedAtMs int64) {
+	touches := buildMemoryTouches(semanticResults, emotionalResults)
+	if len(touches) == 0 {
+		return
+	}
+
+	orchestrator.runBackground(func() {
+		_ = orchestrator.vectorStore.TouchMemories(context.Background(), touches, accessedAtMs)
+	})
+}
+
+func buildMemoryTouches(resultSets ...[]model.MemoryHit) []model.MemoryAccessUpdate {
+	latest := make(map[string]model.MemoryAccessUpdate)
+	for _, results := range resultSets {
+		for _, hit := range results {
+			if hit.PointID == "" {
+				continue
+			}
+			latest[hit.PointID] = model.MemoryAccessUpdate{
+				PointID:     hit.PointID,
+				MemoryID:    hit.MemoryID,
+				AccessCount: hit.AccessCount + 1,
+			}
+		}
+	}
+
+	out := make([]model.MemoryAccessUpdate, 0, len(latest))
+	for _, touch := range latest {
+		out = append(out, touch)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].PointID < out[j].PointID
+	})
+	return out
 }

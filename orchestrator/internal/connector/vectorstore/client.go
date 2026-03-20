@@ -170,11 +170,14 @@ func (c *Client) UpsertMemory(ctx context.Context, memory model.StoredMemory) er
 	if memory.CreatedAtMs == 0 {
 		memory.CreatedAtMs = time.Now().UnixMilli()
 	}
+	if memory.LastAccessedAtMs == 0 {
+		memory.LastAccessedAtMs = memory.CreatedAtMs
+	}
 
 	payload, err := json.Marshal(map[string]any{
 		"points": []map[string]any{
 			{
-				"id":     memory.MemoryID,
+				"id":     pointIDForMemory(memory),
 				"vector": blendVectors(textEmbedding(memory.Content, 6), ensureDimension(memory.Emotion.Components, 6)),
 				"payload": map[string]any{
 					"agent_id":           memory.AgentID,
@@ -189,7 +192,7 @@ func (c *Client) UpsertMemory(ctx context.Context, memory model.StoredMemory) er
 					"access_count":       memory.AccessCount,
 					"valence_magnitude":  ensureValenceMagnitude(memory),
 					"created_at":         memory.CreatedAtMs,
-					"last_accessed_at":   memory.CreatedAtMs,
+					"last_accessed_at":   memory.LastAccessedAtMs,
 				},
 			},
 		},
@@ -224,6 +227,60 @@ func (c *Client) UpsertMemory(ctx context.Context, memory model.StoredMemory) er
 		c.metrics.IncDependencyError("qdrant", "upsert_memory")
 	}
 	return err
+}
+
+func (c *Client) TouchMemories(ctx context.Context, touches []model.MemoryAccessUpdate, accessedAtMs int64) error {
+	if len(touches) == 0 {
+		return nil
+	}
+	if accessedAtMs == 0 {
+		accessedAtMs = time.Now().UnixMilli()
+	}
+
+	for _, touch := range dedupeMemoryTouches(touches) {
+		if strings.TrimSpace(touch.PointID) == "" {
+			continue
+		}
+
+		payload, err := json.Marshal(map[string]any{
+			"payload": map[string]any{
+				"access_count":     touch.AccessCount,
+				"last_accessed_at": accessedAtMs,
+			},
+			"points": []string{touch.PointID},
+		})
+		if err != nil {
+			return err
+		}
+
+		err = resilience.Do(ctx, c.retry, func(attemptCtx context.Context) error {
+			callCtx, cancel := context.WithTimeout(attemptCtx, 350*time.Millisecond)
+			defer cancel()
+			url := fmt.Sprintf("%s/collections/%s/points/payload?wait=true", c.baseURL, c.collection)
+			req, err := http.NewRequestWithContext(callCtx, http.MethodPost, url, bytes.NewReader(payload))
+			if err != nil {
+				return err
+			}
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := c.http.Do(req)
+			if err != nil {
+				return err
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode >= 400 {
+				body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+				return fmt.Errorf("qdrant touch memory failed with %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+			}
+			return nil
+		})
+		if err != nil {
+			c.metrics.IncDependencyError("qdrant", "touch_memories")
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (c *Client) GetMemoriesByLevel(ctx context.Context, agentID string, level uint32, limit int) ([]model.StoredMemory, error) {
@@ -393,11 +450,13 @@ func (c *Client) search(ctx context.Context, vector []float32, agentID string, l
 		for _, point := range decoded.Result {
 			stored := decodeStoredMemory(point)
 			hit := model.MemoryHit{
+				PointID:           stored.PointID,
 				MemoryID:          stored.MemoryID,
 				Content:           stored.Content,
 				CognitiveScore:    stored.CognitiveScore,
 				MemoryLevel:       stored.MemoryLevel,
 				IsPseudopermanent: stored.IsPseudopermanent,
+				AccessCount:       stored.AccessCount,
 				CreatedAtMs:       stored.CreatedAtMs,
 			}
 			if hit.MemoryID == "" {
@@ -428,6 +487,7 @@ func (c *Client) search(ctx context.Context, vector []float32, agentID string, l
 
 func decodeStoredMemory(point searchPoint) model.StoredMemory {
 	memory := model.StoredMemory{
+		PointID:           resolvePointID(point.ID),
 		MemoryID:          resolveMemoryID(point.ID, point.Payload),
 		AgentID:           readString(point.Payload["agent_id"]),
 		Content:           firstNonEmptyString(point.Payload["content"], point.Payload["content_text"]),
@@ -438,6 +498,7 @@ func decodeStoredMemory(point searchPoint) model.StoredMemory {
 		AccessCount:       readUint32(point.Payload["access_count"]),
 		ValenceMagnitude:  readFloat32(point.Payload["valence_magnitude"]),
 		CreatedAtMs:       readInt64(point.Payload["created_at"]),
+		LastAccessedAtMs:  readInt64(point.Payload["last_accessed_at"]),
 	}
 	if memory.MemoryLevel == 0 {
 		memory.MemoryLevel = 1
@@ -592,6 +653,13 @@ func resolveMemoryID(id any, payload map[string]any) string {
 	if payloadID := readString(payload["memory_id"]); payloadID != "" {
 		return payloadID
 	}
+	if pointID := resolvePointID(id); pointID != "" {
+		return pointID
+	}
+	return ""
+}
+
+func resolvePointID(id any) string {
 	switch value := id.(type) {
 	case string:
 		return value
@@ -615,6 +683,36 @@ func ensureValenceMagnitude(memory model.StoredMemory) float32 {
 		return 0
 	}
 	return float32(math.Abs(float64(memory.Emotion.Components[0])))
+}
+
+func pointIDForMemory(memory model.StoredMemory) string {
+	if pointID := strings.TrimSpace(memory.PointID); pointID != "" {
+		return pointID
+	}
+	return memory.MemoryID
+}
+
+func dedupeMemoryTouches(touches []model.MemoryAccessUpdate) []model.MemoryAccessUpdate {
+	if len(touches) == 0 {
+		return nil
+	}
+
+	latest := make(map[string]model.MemoryAccessUpdate, len(touches))
+	for _, touch := range touches {
+		if strings.TrimSpace(touch.PointID) == "" {
+			continue
+		}
+		latest[touch.PointID] = touch
+	}
+
+	out := make([]model.MemoryAccessUpdate, 0, len(latest))
+	for _, touch := range latest {
+		out = append(out, touch)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].PointID < out[j].PointID
+	})
+	return out
 }
 
 func firstNonEmptyString(values ...any) string {

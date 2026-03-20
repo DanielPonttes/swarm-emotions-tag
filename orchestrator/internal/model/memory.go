@@ -1,6 +1,7 @@
 package model
 
 type MemoryHit struct {
+	PointID           string  `json:"point_id,omitempty"`
 	MemoryID          string  `json:"memory_id"`
 	Content           string  `json:"content"`
 	SemanticScore     float32 `json:"semantic_score"`
@@ -8,6 +9,7 @@ type MemoryHit struct {
 	CognitiveScore    float32 `json:"cognitive_score"`
 	MemoryLevel       uint32  `json:"memory_level"`
 	IsPseudopermanent bool    `json:"is_pseudopermanent"`
+	AccessCount       uint32  `json:"access_count"`
 	CreatedAtMs       int64   `json:"created_at_ms"`
 }
 
@@ -39,6 +41,7 @@ type WorkingMemoryEntry struct {
 }
 
 type StoredMemory struct {
+	PointID           string        `json:"point_id,omitempty"`
 	MemoryID          string        `json:"memory_id"`
 	AgentID           string        `json:"agent_id"`
 	Content           string        `json:"content"`
@@ -50,6 +53,13 @@ type StoredMemory struct {
 	AccessCount       uint32        `json:"access_count"`
 	ValenceMagnitude  float32       `json:"valence_magnitude"`
 	CreatedAtMs       int64         `json:"created_at_ms"`
+	LastAccessedAtMs  int64         `json:"last_accessed_at_ms"`
+}
+
+type MemoryAccessUpdate struct {
+	PointID     string `json:"point_id"`
+	AccessCount uint32 `json:"access_count"`
+	MemoryID    string `json:"memory_id,omitempty"`
 }
 
 type PromotionCandidate struct {

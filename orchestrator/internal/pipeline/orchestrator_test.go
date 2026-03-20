@@ -407,6 +407,10 @@ func (s slowVectorStore) UpsertMemory(context.Context, model.StoredMemory) error
 	return nil
 }
 
+func (s slowVectorStore) TouchMemories(context.Context, []model.MemoryAccessUpdate, int64) error {
+	return nil
+}
+
 func (s slowVectorStore) GetMemoriesByLevel(context.Context, string, uint32, int) ([]model.StoredMemory, error) {
 	return nil, nil
 }
@@ -474,6 +478,22 @@ func (s *spyVectorStore) QueryEmotional(context.Context, connector.QueryEmotiona
 
 func (s *spyVectorStore) UpsertMemory(_ context.Context, memory model.StoredMemory) error {
 	s.memories = append(s.memories, memory)
+	return nil
+}
+
+func (s *spyVectorStore) TouchMemories(_ context.Context, touches []model.MemoryAccessUpdate, accessedAtMs int64) error {
+	for _, touch := range touches {
+		for i := range s.memories {
+			if pointID := s.memories[i].PointID; pointID != "" && pointID == touch.PointID {
+				s.memories[i].AccessCount = touch.AccessCount
+				s.memories[i].LastAccessedAtMs = accessedAtMs
+			}
+			if s.memories[i].PointID == "" && s.memories[i].MemoryID == touch.PointID {
+				s.memories[i].AccessCount = touch.AccessCount
+				s.memories[i].LastAccessedAtMs = accessedAtMs
+			}
+		}
+	}
 	return nil
 }
 

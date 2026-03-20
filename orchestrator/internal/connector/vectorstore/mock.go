@@ -33,12 +33,14 @@ func (c *MockClient) QuerySemantic(_ context.Context, params connector.QuerySema
 	for _, memory := range stored {
 		score := cosineSimilarity(queryVector, blendVectors(textEmbedding(memory.Content, 6), ensureDimension(memory.Emotion.Components, 6)))
 		hits = append(hits, model.MemoryHit{
+			PointID:           pointIDForMemory(memory),
 			MemoryID:          memory.MemoryID,
 			Content:           memory.Content,
 			SemanticScore:     score,
 			CognitiveScore:    memory.CognitiveScore,
 			MemoryLevel:       memory.MemoryLevel,
 			IsPseudopermanent: memory.IsPseudopermanent,
+			AccessCount:       memory.AccessCount,
 			CreatedAtMs:       memory.CreatedAtMs,
 		})
 	}
@@ -79,12 +81,14 @@ func (c *MockClient) QueryEmotional(_ context.Context, params connector.QueryEmo
 	for _, memory := range stored {
 		score := cosineSimilarity(queryVector, blendVectors(textEmbedding(memory.Content, 6), ensureDimension(memory.Emotion.Components, 6)))
 		hits = append(hits, model.MemoryHit{
+			PointID:           pointIDForMemory(memory),
 			MemoryID:          memory.MemoryID,
 			Content:           memory.Content,
 			EmotionalScore:    score,
 			CognitiveScore:    memory.CognitiveScore,
 			MemoryLevel:       memory.MemoryLevel,
 			IsPseudopermanent: memory.IsPseudopermanent,
+			AccessCount:       memory.AccessCount,
 			CreatedAtMs:       memory.CreatedAtMs,
 		})
 	}
@@ -124,8 +128,14 @@ func (c *MockClient) UpsertMemory(_ context.Context, memory model.StoredMemory) 
 	if memory.CreatedAtMs == 0 {
 		memory.CreatedAtMs = 1
 	}
+	if memory.PointID == "" {
+		memory.PointID = memory.MemoryID
+	}
 	if memory.ValenceMagnitude == 0 && len(memory.Emotion.Components) > 0 {
 		memory.ValenceMagnitude = float32(math.Abs(float64(memory.Emotion.Components[0])))
+	}
+	if memory.LastAccessedAtMs == 0 {
+		memory.LastAccessedAtMs = memory.CreatedAtMs
 	}
 
 	c.mu.Lock()
@@ -144,6 +154,30 @@ func (c *MockClient) UpsertMemory(_ context.Context, memory model.StoredMemory) 
 		items = append(items, memory)
 	}
 	c.memories[memory.AgentID] = items
+	return nil
+}
+
+func (c *MockClient) TouchMemories(_ context.Context, touches []model.MemoryAccessUpdate, accessedAtMs int64) error {
+	if accessedAtMs == 0 {
+		accessedAtMs = 1
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for _, touch := range dedupeMemoryTouches(touches) {
+		for agentID, items := range c.memories {
+			for i := range items {
+				if pointIDForMemory(items[i]) != touch.PointID {
+					continue
+				}
+				items[i].AccessCount = touch.AccessCount
+				items[i].LastAccessedAtMs = accessedAtMs
+				c.memories[agentID] = items
+				break
+			}
+		}
+	}
 	return nil
 }
 
@@ -179,7 +213,7 @@ func (c *MockClient) UpdateMemoryLevel(_ context.Context, memoryID string, level
 
 	for agentID, items := range c.memories {
 		for i := range items {
-			if items[i].MemoryID != memoryID {
+			if items[i].MemoryID != memoryID && pointIDForMemory(items[i]) != memoryID {
 				continue
 			}
 			items[i].MemoryLevel = level

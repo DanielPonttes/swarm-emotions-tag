@@ -234,6 +234,65 @@ func TestClientIntegration_GetMemoriesByLevelAndPromoteToL3(t *testing.T) {
 	}
 }
 
+func TestClientIntegration_TouchMemoriesUpdatesAccessMetadata(t *testing.T) {
+	rawQdrantAddr := testutil.EnvOrDefault("QDRANT_ADDR", "127.0.0.1:6333")
+	hostPort, err := testutil.ExtractHostPort(rawQdrantAddr, "6333")
+	if err != nil {
+		t.Fatalf("extract qdrant host: %v", err)
+	}
+	if strings.HasSuffix(hostPort, ":6334") {
+		hostPort = strings.TrimSuffix(hostPort, ":6334") + ":6333"
+	}
+	testutil.RequireTCP(t, hostPort)
+
+	collection := testutil.UniqueID("it-qdrant-touch")
+	client, err := vectorstore.NewClient(rawQdrantAddr, collection)
+	if err != nil {
+		t.Fatalf("new vectorstore client: %v", err)
+	}
+
+	ctx := context.Background()
+	agentID := testutil.UniqueID("agent-touch")
+	memory := model.StoredMemory{
+		MemoryID:         testutil.UniqueID("mem"),
+		AgentID:          agentID,
+		Content:          "touch metadata memory",
+		Emotion:          model.EmotionVector{Components: []float32{0.2, 0.4, 0.1, 0.1, 0, 0.2}},
+		Intensity:        0.5,
+		CognitiveScore:   0.6,
+		MemoryLevel:      2,
+		AccessCount:      1,
+		CreatedAtMs:      time.Now().Add(-time.Hour).UnixMilli(),
+		LastAccessedAtMs: time.Now().Add(-2 * time.Hour).UnixMilli(),
+	}
+
+	if err := client.UpsertMemory(ctx, memory); err != nil {
+		t.Fatalf("upsert memory: %v", err)
+	}
+
+	touchedAt := time.Now().UnixMilli()
+	if err := client.TouchMemories(ctx, []model.MemoryAccessUpdate{
+		{PointID: memory.MemoryID, MemoryID: memory.MemoryID, AccessCount: 2},
+	}, touchedAt); err != nil {
+		t.Fatalf("touch memories: %v", err)
+	}
+
+	memories, err := client.GetMemoriesByLevel(ctx, agentID, 2, 10)
+	if err != nil {
+		t.Fatalf("get memories by level: %v", err)
+	}
+	touched := findStoredMemory(memories, memory.MemoryID)
+	if touched == nil {
+		t.Fatalf("expected touched memory %q, got %#v", memory.MemoryID, memories)
+	}
+	if touched.AccessCount != 2 {
+		t.Fatalf("expected access_count=2 after touch, got %d", touched.AccessCount)
+	}
+	if touched.LastAccessedAtMs != touchedAt {
+		t.Fatalf("expected last_accessed_at=%d after touch, got %d", touchedAt, touched.LastAccessedAtMs)
+	}
+}
+
 func upsertPoints(baseURL, collection string, points []map[string]any) error {
 	body, err := json.Marshal(map[string]any{
 		"points": points,

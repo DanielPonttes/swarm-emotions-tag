@@ -196,8 +196,12 @@ func evaluateL2Promotions(ctx context.Context, orchestrator *Orchestrator, agent
 
 	candidates := make([]model.PromotionCandidate, 0, len(memories))
 	for _, memory := range memories {
+		targetID := memory.MemoryID
+		if memory.PointID != "" {
+			targetID = memory.PointID
+		}
 		candidates = append(candidates, model.PromotionCandidate{
-			MemoryID:         memory.MemoryID,
+			MemoryID:         targetID,
 			Intensity:        memory.Intensity,
 			CurrentLevel:     memory.MemoryLevel,
 			AccessFrequency:  memory.AccessCount,

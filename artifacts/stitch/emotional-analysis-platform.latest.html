@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Sentient | Emotional AI Analysis</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Epilogue:wght@400;700;800;900&amp;family=Manrope:wght@400;500;600&amp;family=Space_Grotesk:wght@500;700&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-secondary": "#5c3800",
+                        "surface-container-lowest": "#000000",
+                        "tertiary-fixed": "#ff9ac2",
+                        "surface-bright": "#172b54",
+                        "on-primary-fixed": "#2f017c",
+                        "primary-fixed-dim": "#bca6ff",
+                        "on-surface": "#dee5ff",
+                        "surface-variant": "#142449",
+                        "on-tertiary-container": "#6f0041",
+                        "on-error": "#490013",
+                        "secondary-dim": "#f8a010",
+                        "error-container": "#8a1632",
+                        "surface-container-highest": "#142449",
+                        "outline": "#65759e",
+                        "on-error-container": "#ff97a3",
+                        "secondary-container": "#382100",
+                        "on-secondary-fixed-variant": "#815100",
+                        "background": "#060e20",
+                        "on-tertiary": "#80004c",
+                        "on-secondary-container": "#e49200",
+                        "error": "#fd6f85",
+                        "surface": "#060e20",
+                        "inverse-surface": "#faf8ff",
+                        "primary": "#b299ff",
+                        "on-surface-variant": "#9baad6",
+                        "on-tertiary-fixed": "#470027",
+                        "inverse-primary": "#684cb6",
+                        "on-primary-container": "#230062",
+                        "surface-dim": "#060e20",
+                        "on-primary": "#31067e",
+                        "primary-fixed": "#c9b6ff",
+                        "surface-container-low": "#081329",
+                        "tertiary-container": "#ff9ac2",
+                        "on-primary-fixed-variant": "#4d2f9a",
+                        "outline-variant": "#38476d",
+                        "tertiary-dim": "#ff67ad",
+                        "error-dim": "#c8475d",
+                        "inverse-on-surface": "#4d556b",
+                        "on-secondary-fixed": "#5b3700",
+                        "secondary-fixed-dim": "#ffcb8e",
+                        "secondary": "#ffb95f",
+                        "primary-container": "#a589f8",
+                        "surface-container-high": "#101e3e",
+                        "surface-tint": "#b299ff",
+                        "surface-container": "#0c1934",
+                        "on-tertiary-fixed-variant": "#7f004b",
+                        "tertiary-fixed-dim": "#ff82b8",
+                        "tertiary": "#ffb0cd",
+                        "secondary-fixed": "#ffddb8",
+                        "primary-dim": "#a88cfb",
+                        "on-background": "#dee5ff"
+                    },
+                    fontFamily: {
+                        "headline": ["Epilogue"],
+                        "body": ["Manrope"],
+                        "label": ["Space Grotesk"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+        }
+        .glass-panel {
+            backdrop-filter: blur(40px);
+            background: rgba(12, 25, 52, 0.7);
+        }
+        .pulse-bg {
+            background: radial-gradient(circle, rgba(178, 153, 255, 0.15) 0%, rgba(6, 14, 32, 0) 70%);
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body overflow-hidden selection:bg-primary/30 selection:text-primary">
+<!-- Top Navigation -->
+<header class="bg-[#060e20]/70 backdrop-blur-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.36)] fixed top-0 w-full flex justify-between items-center px-8 py-4 z-50">
+<div class="flex items-center gap-12">
+<span class="text-2xl font-black text-[#dee5ff] tracking-tighter font-headline">Sentient</span>
+<nav class="hidden md:flex items-center gap-8">
+<a class="text-[#b299ff] border-b-2 border-[#b299ff] pb-1 font-headline tracking-tight font-bold" href="#">Analysis</a>
+<a class="text-[#dee5ff]/60 hover:text-[#dee5ff] transition-colors font-headline tracking-tight font-bold" href="#">Archive</a>
+<a class="text-[#dee5ff]/60 hover:text-[#dee5ff] transition-colors font-headline tracking-tight font-bold" href="#">Insights</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<button class="p-2 text-[#dee5ff]/60 hover:text-[#dee5ff] transition-colors hover:bg-[#142449]/50 rounded-lg">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="p-2 text-[#dee5ff]/60 hover:text-[#dee5ff] transition-colors hover:bg-[#142449]/50 rounded-lg">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</button>
+<div class="w-10 h-10 rounded-full bg-surface-container-highest overflow-hidden border border-outline-variant/30 ml-2">
+<img alt="User profile avatar" class="w-full h-full object-cover" data-alt="Close up of professional male user avatar profile" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDZs8zHz8p1fHLIP88sPmaqX9Y5cuGyLe_hrfky5BVEx7UhJqRm7DQzNNUwZzdwnbflAuB8gxO6ojPBvJPx1Xv_mRvUSItPocT_TV-_t2Rgg3CxGJkSwQ57jruaRhDxQuQt4pg1Grvg_0yk0ee1EY5r_j116NfJbGOtE_Ct2BWLUHpldH8jf4f9h-koJ6DttFaJOI92S1L5YI8oHsnkHyanuRWHovoFJ_tuX_KYZKT7bfEGqmdYCV9G7a0uL7atoRUlEmiIk0uXPctB"/>
+</div>
+</div>
+<div class="absolute bottom-0 left-0 bg-gradient-to-b from-[#142449] to-transparent h-px w-full"></div>
+</header>
+<!-- Side Navigation -->
+<aside class="bg-[#081329]/80 backdrop-blur-2xl fixed left-0 top-0 h-full flex flex-col pt-24 pb-8 w-64 shadow-2xl z-40 hidden md:flex">
+<div class="px-6 mb-10">
+<div class="flex items-center gap-3 mb-6">
+<div class="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-xl" data-icon="memory">memory</span>
+</div>
+<div>
+<h3 class="text-[#dee5ff] font-headline font-bold text-sm tracking-tight">Neural Interface</h3>
+<p class="text-primary/70 font-label text-[10px] uppercase tracking-widest">Emotional Pulse: Active</p>
+</div>
+</div>
+<button class="w-full bg-gradient-to-br from-primary to-primary-container text-on-primary py-3 rounded-xl font-headline font-bold text-sm shadow-lg shadow-primary/20 active:scale-95 transition-transform duration-200">
+                New Analysis
+            </button>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 bg-gradient-to-r from-[#b299ff]/20 to-transparent text-[#b299ff] border-l-4 border-[#b299ff] py-3 px-6 font-body font-medium text-sm transition-all hover:translate-x-1 duration-300" href="#">
+<span class="material-symbols-outlined" data-icon="grain">grain</span>
+<span>Vector Map</span>
+</a>
+<a class="flex items-center gap-3 text-[#dee5ff]/40 hover:text-[#dee5ff] hover:bg-[#142449] py-3 px-6 font-body font-medium text-sm transition-all hover:translate-x-1 duration-300" href="#">
+<span class="material-symbols-outlined" data-icon="radar">radar</span>
+<span>Radar View</span>
+</a>
+<a class="flex items-center gap-3 text-[#dee5ff]/40 hover:text-[#dee5ff] hover:bg-[#142449] py-3 px-6 font-body font-medium text-sm transition-all hover:translate-x-1 duration-300" href="#">
+<span class="material-symbols-outlined" data-icon="hub">hub</span>
+<span>Network</span>
+</a>
+<a class="flex items-center gap-3 text-[#dee5ff]/40 hover:text-[#dee5ff] hover:bg-[#142449] py-3 px-6 font-body font-medium text-sm transition-all hover:translate-x-1 duration-300" href="#">
+<span class="material-symbols-outlined" data-icon="history">history</span>
+<span>History</span>
+</a>
+</nav>
+<div class="px-6 pt-8 border-t border-outline-variant/10">
+<a class="flex items-center gap-3 text-[#dee5ff]/40 hover:text-[#dee5ff] py-2 font-body font-medium text-xs transition-all" href="#">
+<span class="material-symbols-outlined text-lg" data-icon="help_outline">help_outline</span>
+<span>Documentation</span>
+</a>
+<a class="flex items-center gap-3 text-[#dee5ff]/40 hover:text-[#dee5ff] py-2 font-body font-medium text-xs transition-all" href="#">
+<span class="material-symbols-outlined text-lg" data-icon="contact_support">contact_support</span>
+<span>Support</span>
+</a>
+</div>
+<div class="absolute right-0 top-0 bg-[#142449] w-px h-full"></div>
+</aside>
+<!-- Main Content -->
+<main class="md:ml-64 pt-24 px-8 pb-12 min-h-screen relative overflow-y-auto no-scrollbar">
+<!-- Atmospheric Glows -->
+<div class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-primary/5 blur-[120px] rounded-full -z-10"></div>
+<div class="fixed bottom-0 right-0 w-[600px] h-[600px] bg-secondary/5 blur-[100px] rounded-full -z-10"></div>
+<div class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+<!-- Analysis Engine (Center Left) -->
+<div class="lg:col-span-8 space-y-8">
+<section class="space-y-6">
+<div class="space-y-2">
+<h1 class="text-4xl md:text-5xl font-black font-headline tracking-tighter text-on-surface">Emotional Core</h1>
+<p class="text-on-surface-variant max-w-xl font-body text-lg leading-relaxed">Translate the abstract geometry of your mind into actionable data. Our sentient core listens for the nuance between words.</p>
+</div>
+<div class="relative group">
+<div class="absolute -inset-1 bg-gradient-to-r from-primary/20 to-secondary/20 rounded-2xl blur opacity-30 group-focus-within:opacity-100 transition duration-1000"></div>
+<div class="relative bg-surface-container-low rounded-xl overflow-hidden p-6 shadow-2xl">
+<textarea class="w-full bg-transparent border-none focus:ring-0 text-xl md:text-2xl font-body text-on-surface placeholder:text-on-surface-variant/40 resize-none h-48 scrollbar-hide" placeholder="How are you feeling today? Speak your truth..."></textarea>
+<div class="flex justify-between items-center mt-4">
+<div class="flex gap-4">
+<button class="flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-xl" data-icon="mic">mic</span>
+<span class="text-xs font-label">Voice Probe</span>
+</button>
+<button class="flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-xl" data-icon="attachment">attachment</span>
+<span class="text-xs font-label">Journal File</span>
+</button>
+</div>
+<button class="px-8 py-3 bg-gradient-to-br from-primary to-primary-container text-on-primary rounded-xl font-headline font-extrabold flex items-center gap-3 shadow-xl shadow-primary/30 relative group overflow-hidden">
+<span class="relative z-10">Analyze</span>
+<span class="material-symbols-outlined relative z-10 group-hover:translate-x-1 transition-transform" data-icon="auto_awesome">auto_awesome</span>
+<div class="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+</button>
+</div>
+</div>
+</div>
+</section>
+<!-- Vector Map Visualization -->
+<section class="bg-surface-container-low rounded-xl p-8 h-[500px] relative overflow-hidden group">
+<div class="flex justify-between items-center relative z-10 mb-6">
+<h3 class="text-xl font-headline font-bold tracking-tight">Emotional Vector Map</h3>
+<div class="flex bg-surface-container rounded-full p-1 border border-outline-variant/10">
+<button class="px-4 py-1.5 rounded-full text-xs font-label bg-primary text-on-primary">Vector</button>
+<button class="px-4 py-1.5 rounded-full text-xs font-label text-on-surface-variant hover:text-on-surface transition-colors">Radar</button>
+<button class="px-4 py-1.5 rounded-full text-xs font-label text-on-surface-variant hover:text-on-surface transition-colors">Network</button>
+</div>
+</div>
+<!-- SVG Abstract Map Visualization Simulation -->
+<div class="absolute inset-0 flex items-center justify-center opacity-60">
+<svg class="w-full h-full" viewbox="0 0 800 500">
+<defs>
+<lineargradient id="grad1" x1="0%" x2="100%" y1="0%" y2="0%">
+<stop offset="0%" style="stop-color:#b299ff;stop-opacity:0.2"></stop>
+<stop offset="50%" style="stop-color:#ffb95f;stop-opacity:0.5"></stop>
+<stop offset="100%" style="stop-color:#ffb0cd;stop-opacity:0.2"></stop>
+</lineargradient>
+</defs>
+<path class="opacity-50" d="M50 250 Q 200 50 400 250 T 750 250" fill="none" stroke="url(#grad1)" stroke-width="2"></path>
+<path class="opacity-30" d="M50 300 Q 250 150 400 350 T 750 200" fill="none" stroke="url(#grad1)" stroke-width="1.5"></path>
+<circle class="opacity-20 animate-pulse" cx="200" cy="150" fill="#b299ff" r="40"></circle>
+<circle class="opacity-20" cx="450" cy="300" fill="#ffb95f" r="60"></circle>
+<circle class="opacity-20 animate-pulse" cx="600" cy="180" fill="#ffb0cd" r="30"></circle>
+<!-- Vector Nodes -->
+<g class="nodes">
+<circle cx="200" cy="150" fill="#b299ff" r="4"></circle>
+<text fill="#b299ff" font-family="Space Grotesk" font-size="10" text-anchor="middle" x="200" y="130">JOY: 84%</text>
+<circle cx="450" cy="300" fill="#ffb95f" r="4"></circle>
+<text fill="#ffb95f" font-family="Space Grotesk" font-size="10" text-anchor="middle" x="450" y="325">TRUST: 71%</text>
+<circle cx="600" cy="180" fill="#ffb0cd" r="4"></circle>
+<text fill="#ffb0cd" font-family="Space Grotesk" font-size="10" text-anchor="middle" x="600" y="160">AFFECTION: 92%</text>
+</g>
+</svg>
+</div>
+<!-- Emotional Pulse Element -->
+<div class="absolute bottom-8 right-8 flex items-center gap-4 bg-surface-container-highest/60 backdrop-blur-md p-4 rounded-2xl border border-outline-variant/20">
+<div class="w-12 h-12 rounded-full flex items-center justify-center relative">
+<div class="absolute inset-0 bg-primary/20 rounded-full animate-ping"></div>
+<div class="absolute inset-0 bg-primary/40 rounded-full scale-75 animate-pulse"></div>
+<span class="material-symbols-outlined text-primary" data-icon="insights">insights</span>
+</div>
+<div>
+<p class="text-[10px] font-label text-on-surface-variant uppercase tracking-[0.2em]">Live Resonance</p>
+<p class="text-sm font-headline font-bold text-on-surface">Synchronizing Pattern...</p>
+</div>
+</div>
+</section>
+</div>
+<!-- Insights Panel (Right Column) -->
+<div class="lg:col-span-4 space-y-8">
+<!-- Score Card -->
+<div class="bg-surface-container-high rounded-xl p-8 text-center relative overflow-hidden">
+<div class="absolute top-0 right-0 p-4">
+<span class="material-symbols-outlined text-secondary/40 text-4xl" data-icon="ac_unit">ac_unit</span>
+</div>
+<p class="text-[11px] font-label text-on-surface-variant uppercase tracking-[0.3em] mb-4">Sentiment Index</p>
+<div class="relative inline-block mb-4">
+<svg class="w-40 h-40 transform -rotate-90">
+<circle class="text-surface-container" cx="80" cy="80" fill="transparent" r="70" stroke="currentColor" stroke-width="8"></circle>
+<circle class="text-primary" cx="80" cy="80" fill="transparent" r="70" stroke="currentColor" stroke-dasharray="440" stroke-dashoffset="88" stroke-width="8"></circle>
+</svg>
+<div class="absolute inset-0 flex flex-col items-center justify-center">
+<span class="text-5xl font-black font-headline tracking-tighter">82</span>
+<span class="text-[10px] font-label text-on-surface-variant">/ 100</span>
+</div>
+</div>
+<p class="text-lg font-headline font-bold text-secondary">High Vitality</p>
+<p class="text-xs font-body text-on-surface-variant mt-2 leading-relaxed">Your emotional state indicates deep creative flow and interpersonal confidence.</p>
+</div>
+<!-- Secondary Emotions -->
+<div class="bg-surface-container-low rounded-xl p-8 space-y-6">
+<h4 class="text-sm font-label text-on-surface-variant uppercase tracking-widest">Sub-Sentiments</h4>
+<div class="flex flex-wrap gap-2">
+<span class="px-4 py-2 bg-primary/10 text-primary border border-primary/20 rounded-full text-xs font-body font-semibold">Calm Resonance</span>
+<span class="px-4 py-2 bg-secondary/10 text-secondary border border-secondary/20 rounded-full text-xs font-body font-semibold">Analytical Focus</span>
+<span class="px-4 py-2 bg-tertiary/10 text-tertiary border border-tertiary/20 rounded-full text-xs font-body font-semibold">Quiet Wonder</span>
+<span class="px-4 py-2 bg-on-surface-variant/10 text-on-surface-variant border border-on-surface-variant/20 rounded-full text-xs font-body font-semibold">Pensive</span>
+</div>
+</div>
+<!-- Keywords & Tone -->
+<div class="bg-surface-container-low rounded-xl p-8 space-y-6">
+<h4 class="text-sm font-label text-on-surface-variant uppercase tracking-widest">Dominant Tone</h4>
+<div class="space-y-4">
+<div class="flex justify-between items-center group">
+<div class="flex items-center gap-3">
+<div class="w-1.5 h-1.5 rounded-full bg-primary"></div>
+<span class="text-sm font-body text-on-surface">Authenticity</span>
+</div>
+<span class="text-xs font-label text-primary">Strong</span>
+</div>
+<div class="flex justify-between items-center">
+<div class="flex items-center gap-3">
+<div class="w-1.5 h-1.5 rounded-full bg-secondary"></div>
+<span class="text-sm font-body text-on-surface">Curiosity</span>
+</div>
+<span class="text-xs font-label text-secondary">Emergent</span>
+</div>
+<div class="flex justify-between items-center">
+<div class="flex items-center gap-3">
+<div class="w-1.5 h-1.5 rounded-full bg-tertiary"></div>
+<span class="text-sm font-body text-on-surface">Vulnerability</span>
+</div>
+<span class="text-xs font-label text-tertiary">Balanced</span>
+</div>
+</div>
+<div class="pt-6 border-t border-outline-variant/10">
+<h4 class="text-xs font-label text-on-surface-variant uppercase tracking-widest mb-4">Semantic Anchors</h4>
+<div class="bg-surface-container-highest p-4 rounded-lg">
+<p class="text-xs font-label text-on-surface-variant leading-relaxed">
+                                "Truth", "Discovery", "Flow", "Future", "Clarity"
+                            </p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Bottom Navigation (Mobile Only) -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full glass-panel flex justify-around items-center py-4 px-6 z-50 border-t border-outline-variant/10">
+<button class="flex flex-col items-center gap-1 text-primary">
+<span class="material-symbols-outlined" data-icon="grain">grain</span>
+<span class="text-[10px] font-label">Map</span>
+</button>
+<button class="flex flex-col items-center gap-1 text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="radar">radar</span>
+<span class="text-[10px] font-label">Radar</span>
+</button>
+<button class="flex flex-col items-center gap-1 text-on-surface-variant">
+<div class="w-12 h-12 -mt-8 bg-gradient-to-br from-primary to-primary-container rounded-full flex items-center justify-center shadow-lg shadow-primary/40">
+<span class="material-symbols-outlined text-on-primary" data-icon="add">add</span>
+</div>
+<span class="text-[10px] font-label">New</span>
+</button>
+<button class="flex flex-col items-center gap-1 text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="hub">hub</span>
+<span class="text-[10px] font-label">Network</span>
+</button>
+<button class="flex flex-col items-center gap-1 text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="history">history</span>
+<span class="text-[10px] font-label">Log</span>
+</button>
+</nav>
+<!-- Background Decoration -->
+<div class="fixed inset-0 -z-50 pointer-events-none overflow-hidden">
+<div class="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-[#b299ff]/5 rounded-full blur-[120px]"></div>
+<div class="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-[#ffb95f]/3 rounded-full blur-[150px]"></div>
+<div class="absolute inset-0 opacity-[0.03]" style="background-image: radial-gradient(#b299ff 1px, transparent 0); background-size: 40px 40px;"></div>
+</div>
+</body></html>

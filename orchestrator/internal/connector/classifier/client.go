@@ -34,11 +34,22 @@ type classifyResponse struct {
 }
 
 type healthResponse struct {
-	Status         string `json:"status"`
-	ModelLoaded    bool   `json:"model_loaded"`
-	ClassifierMode string `json:"classifier_mode"`
-	ModelName      string `json:"model_name"`
-	LoadError      string `json:"load_error"`
+	Status                         string            `json:"status"`
+	ModelLoaded                    bool              `json:"model_loaded"`
+	ClassifierMode                 string            `json:"classifier_mode"`
+	ModelName                      string            `json:"model_name"`
+	ClassifierDevice               string            `json:"classifier_device"`
+	ClassifierBatchSize            int               `json:"classifier_batch_size"`
+	ClassifierOllamaMaxConcurrency int               `json:"classifier_ollama_max_concurrency"`
+	LoadError                      string            `json:"load_error"`
+	Runtime                        healthRuntimeInfo `json:"runtime"`
+}
+
+type healthRuntimeInfo struct {
+	TorchVersion    string   `json:"torch_version"`
+	CUDAAvailable   bool     `json:"cuda_available"`
+	CUDADeviceCount int      `json:"cuda_device_count"`
+	CUDADevices     []string `json:"cuda_devices"`
 }
 
 func NewClient(baseURL string) *Client {
@@ -83,11 +94,40 @@ func (c *Client) Ready(ctx context.Context) error {
 	if !decoded.ModelLoaded {
 		c.metrics.IncDependencyError("classifier", "ready")
 		if strings.TrimSpace(decoded.LoadError) != "" {
-			return fmt.Errorf("classifier model not loaded: %s", decoded.LoadError)
+			return fmt.Errorf("classifier model not loaded: %s (%s)", decoded.LoadError, decoded.summary())
 		}
-		return fmt.Errorf("classifier model not loaded")
+		return fmt.Errorf("classifier model not loaded (%s)", decoded.summary())
 	}
 	return nil
+}
+
+func (h healthResponse) summary() string {
+	parts := make([]string, 0, 8)
+	if value := strings.TrimSpace(h.Status); value != "" {
+		parts = append(parts, "status="+value)
+	}
+	if value := strings.TrimSpace(h.ClassifierMode); value != "" {
+		parts = append(parts, "mode="+value)
+	}
+	if value := strings.TrimSpace(h.ModelName); value != "" {
+		parts = append(parts, "model="+value)
+	}
+	if value := strings.TrimSpace(h.ClassifierDevice); value != "" {
+		parts = append(parts, "device="+value)
+	}
+	if h.ClassifierBatchSize > 0 {
+		parts = append(parts, fmt.Sprintf("batch_size=%d", h.ClassifierBatchSize))
+	}
+	if h.ClassifierOllamaMaxConcurrency > 0 {
+		parts = append(parts, fmt.Sprintf("ollama_concurrency=%d", h.ClassifierOllamaMaxConcurrency))
+	}
+	if h.Runtime.CUDAAvailable {
+		parts = append(parts, fmt.Sprintf("cuda_devices=%d", h.Runtime.CUDADeviceCount))
+	}
+	if value := strings.TrimSpace(h.Runtime.TorchVersion); value != "" {
+		parts = append(parts, "torch="+value)
+	}
+	return strings.Join(parts, ", ")
 }
 
 func (c *Client) ClassifyEmotion(ctx context.Context, text string) (*connector.EmotionClassification, error) {

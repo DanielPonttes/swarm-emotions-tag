@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/swarm-emotions/orchestrator/internal/tracectx"
@@ -17,7 +18,7 @@ func TestClientClassifyEmotion(t *testing.T) {
 		case "/health":
 			healthTraceID = r.Header.Get(traceIDHeader)
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"status":"ok","model_loaded":true,"classifier_mode":"heuristic","model_name":"test-model"}`))
+			_, _ = w.Write([]byte(`{"status":"ok","model_loaded":true,"classifier_mode":"heuristic","model_name":"test-model","classifier_device":"cpu","classifier_batch_size":8}`))
 		case "/classify-emotion":
 			classifyTraceID = r.Header.Get(traceIDHeader)
 			w.Header().Set("Content-Type", "application/json")
@@ -55,12 +56,62 @@ func TestClientClassifyEmotion(t *testing.T) {
 func TestClientReadyFailsWhenModelIsNotLoaded(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"degraded","model_loaded":false,"classifier_mode":"transformers","model_name":"broken-model","classifier_device":"cpu","classifier_batch_size":32,"classifier_ollama_max_concurrency":16,"runtime":{"torch_version":"2.10.0+cu128","cuda_available":true,"cuda_device_count":1},"load_error":"weights missing"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL)
+	err := client.Ready(context.Background())
+	if err == nil {
+		t.Fatalf("expected readiness failure")
+	}
+	message := err.Error()
+	for _, fragment := range []string{
+		"classifier model not loaded: weights missing",
+		"status=degraded",
+		"mode=transformers",
+		"model=broken-model",
+		"device=cpu",
+		"batch_size=32",
+		"ollama_concurrency=16",
+		"cuda_devices=1",
+		"torch=2.10.0+cu128",
+	} {
+		if !strings.Contains(message, fragment) {
+			t.Fatalf("expected ready error to contain %q, got %q", fragment, message)
+		}
+	}
+}
+
+func TestHealthResponseSummaryOmitsEmptyFields(t *testing.T) {
+	summary := (healthResponse{
+		Status:      "ok",
+		ModelLoaded: true,
+		ModelName:   "test-model",
+	}).summary()
+
+	if !strings.Contains(summary, "status=ok") {
+		t.Fatalf("expected status in summary, got %q", summary)
+	}
+	if !strings.Contains(summary, "model=test-model") {
+		t.Fatalf("expected model in summary, got %q", summary)
+	}
+	for _, fragment := range []string{"mode=", "device=", "batch_size=", "ollama_concurrency=", "torch="} {
+		if strings.Contains(summary, fragment) {
+			t.Fatalf("did not expect %q in summary %q", fragment, summary)
+		}
+	}
+}
+
+func TestClientReadyFailsWhenModelIsNotLoadedLegacyMessage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"degraded","model_loaded":false,"classifier_mode":"transformers","model_name":"broken-model","load_error":"weights missing"}`))
 	}))
 	defer server.Close()
 
 	client := NewClient(server.URL)
-	if err := client.Ready(context.Background()); err == nil || err.Error() != "classifier model not loaded: weights missing" {
+	if err := client.Ready(context.Background()); err == nil || !strings.Contains(err.Error(), "classifier model not loaded: weights missing") {
 		t.Fatalf("unexpected ready error: %v", err)
 	}
 }

@@ -17,13 +17,28 @@ phase3_validate_transformers_classifier() {
   )
 
   health_response="$(curl -fsS "$PYTHON_ML_URL/health")"
-  python3 - "$health_response" <<'PY'
+  python3 - \
+    "$health_response" \
+    "$CLASSIFIER_MODEL_NAME" \
+    "$CLASSIFIER_DEVICE" \
+    "$CLASSIFIER_BATCH_SIZE" <<'PY'
 import json
 import sys
 
 payload = json.loads(sys.argv[1])
+expected_model = sys.argv[2]
+expected_device = sys.argv[3]
+expected_batch_size = sys.argv[4]
 if payload.get("classifier_mode") != "transformers":
     raise SystemExit(f"expected classifier_mode=transformers, got {payload.get('classifier_mode')!r}")
+if payload.get("model_name") != expected_model:
+    raise SystemExit(f"expected model_name={expected_model!r}, got {payload.get('model_name')!r}")
+if payload.get("classifier_device") != expected_device:
+    raise SystemExit(f"expected classifier_device={expected_device!r}, got {payload.get('classifier_device')!r}")
+if str(payload.get("classifier_batch_size")) != expected_batch_size:
+    raise SystemExit(
+        f"expected classifier_batch_size={expected_batch_size!r}, got {payload.get('classifier_batch_size')!r}"
+    )
 if not payload.get("model_loaded"):
     raise SystemExit("transformers classifier is not loaded")
 PY
@@ -107,6 +122,7 @@ CLASSIFIER_MODE="${CLASSIFIER_MODE:-transformers}"
 CLASSIFIER_DEVICE="${CLASSIFIER_DEVICE:-cpu}"
 CLASSIFIER_MODEL_NAME="${CLASSIFIER_MODEL_NAME:-monologg/bert-base-cased-goemotions-original}"
 CLASSIFIER_TOP_K="${CLASSIFIER_TOP_K:-5}"
+CLASSIFIER_BATCH_SIZE="${CLASSIFIER_BATCH_SIZE:-8}"
 LLM_PROVIDER="${LLM_PROVIDER:-ollama-native}"
 LLM_BASE_URL="${LLM_BASE_URL:-http://127.0.0.1:11434}"
 LLM_MODEL="${LLM_MODEL:-Qwen/Qwen3.5-27B}"
@@ -115,7 +131,8 @@ OLLAMA_MODEL_TAG="${OLLAMA_MODEL_TAG:-qwen3.5:27b}"
 PHASE3_MULTI_MAX_LATENCY_MS="${PHASE3_MULTI_MAX_LATENCY_MS:-5000}"
 
 export PHASE2_KEEP_STACK_UP PHASE2_WAIT_PYTHON_SEC PHASE3_CLASSIFIER_READY_TIMEOUT_SEC
-export PYTHON_ML_INSTALL_EXTRAS CLASSIFIER_MODE CLASSIFIER_DEVICE CLASSIFIER_MODEL_NAME CLASSIFIER_TOP_K
+export PYTHON_ML_INSTALL_EXTRAS CLASSIFIER_MODE CLASSIFIER_DEVICE CLASSIFIER_MODEL_NAME
+export CLASSIFIER_TOP_K CLASSIFIER_BATCH_SIZE
 export LLM_PROVIDER LLM_BASE_URL LLM_MODEL LLM_ENABLE_THINKING OLLAMA_MODEL_TAG PHASE3_MULTI_MAX_LATENCY_MS
 
 phase2_prepare_env

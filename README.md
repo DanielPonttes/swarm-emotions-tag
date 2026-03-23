@@ -175,6 +175,8 @@ Esse alvo rebuilda o `python-ml`, sobe o servico em `CLASSIFIER_MODE=ollama`,
 valida `POST /classify-emotion` diretamente contra o Qwen local e depois roda a
 matriz comportamental completa com Qwen tanto na geracao quanto na classificacao
 emocional.
+Se o `python-ml` em container nao conseguir alcancar o Ollama do host, o script
+faz fallback automatico para um `python-ml` temporario em `--network host`.
 
 Para validar o mesmo pipeline com o classifier Python real em modo
 `transformers`, existe um alvo dedicado:

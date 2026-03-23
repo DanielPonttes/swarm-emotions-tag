@@ -72,12 +72,13 @@ phase2_prepare_env() {
   PHASE2_WAIT_QDRANT_SEC="${PHASE2_WAIT_QDRANT_SEC:-60}"
   PHASE2_WAIT_EMOTION_SEC="${PHASE2_WAIT_EMOTION_SEC:-90}"
   PHASE2_WAIT_PYTHON_SEC="${PHASE2_WAIT_PYTHON_SEC:-90}"
+  PHASE2_SUPPORT_SERVICES="${PHASE2_SUPPORT_SERVICES:-redis postgresql qdrant emotion-engine python-ml}"
 
   export PHASE2_ROOT_DIR PHASE2_COMPOSE_FILE PHASE2_COMPOSE_OVERRIDE_FILE
   export HTTP_PORT ORCH_URL REDIS_ADDR POSTGRES_DSN QDRANT_ADDR QDRANT_COLLECTION
   export EMOTION_ENGINE_ADDR PYTHON_ML_URL PHASE2_KEEP_STACK_UP PHASE2_RESET_STACK
   export PHASE2_WAIT_REDIS_SEC PHASE2_WAIT_POSTGRES_SEC PHASE2_WAIT_QDRANT_SEC
-  export PHASE2_WAIT_EMOTION_SEC PHASE2_WAIT_PYTHON_SEC
+  export PHASE2_WAIT_EMOTION_SEC PHASE2_WAIT_PYTHON_SEC PHASE2_SUPPORT_SERVICES
 }
 
 phase2_host_port() {
@@ -169,11 +170,15 @@ phase2_wait_for_http() {
 }
 
 phase2_compose_up_support() {
+  local services=()
+
   if [ "$PHASE2_RESET_STACK" = "true" ]; then
     phase2_docker_compose down --remove-orphans -v >/dev/null 2>&1 || true
   fi
 
-  phase2_docker_compose up -d redis postgresql qdrant emotion-engine python-ml
+  # shellcheck disable=SC2206
+  services=($PHASE2_SUPPORT_SERVICES)
+  phase2_docker_compose up -d "${services[@]}"
 }
 
 phase2_wait_for_support() {

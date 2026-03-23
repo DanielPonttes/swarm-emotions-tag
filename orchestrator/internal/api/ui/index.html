@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Swarm Emotions</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Epilogue:wght@500;700;800&family=Manrope:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/assets/app.css" />
+    <script type="module" src="/assets/app.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-block">
+          <p class="eyebrow">EmotionRAG Control Surface</p>
+          <h1>Sentient Orchestrator</h1>
+          <p class="muted">
+            Interface operacional para analise textual, streaming da resposta e
+            leitura do vetor emocional 6D.
+          </p>
+        </div>
+
+        <nav class="sidebar-nav">
+          <a href="#composer">Analise</a>
+          <a href="#vector-map-card">Mapa Vetorial</a>
+          <a href="#history-card">Historico</a>
+          <a href="#transcript-card">Sessao</a>
+        </nav>
+
+        <div class="sidebar-card">
+          <span class="pill-label">Backend</span>
+          <div class="status-line">
+            <span class="status-dot" id="ready-dot"></span>
+            <strong id="ready-status">Checando servicos</strong>
+          </div>
+          <p class="muted" id="ready-detail">
+            Validando a disponibilidade de Redis, Postgres, Python ML, motor
+            emocional e provider LLM.
+          </p>
+        </div>
+
+        <div class="sidebar-card">
+          <span class="pill-label">Eixos do modelo</span>
+          <ul class="axis-list">
+            <li>Valencia</li>
+            <li>Arousal</li>
+            <li>Dominancia</li>
+            <li>Certeza</li>
+            <li>Social</li>
+            <li>Novidade</li>
+          </ul>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Swarm Emotions UI</p>
+            <h2>Texto emocional, resposta em streaming e leitura do estado interno</h2>
+            <p class="hero-copy">
+              A interface agora conversa diretamente com o
+              <code>orchestrator</code>, acompanha a FSM, mostra intensidade
+              normalizada e traduz o vetor emocional em sinais acionaveis.
+            </p>
+          </div>
+
+          <div class="hero-metrics">
+            <div class="metric-card">
+              <span class="metric-label">FSM atual</span>
+              <strong id="fsm-state">Neutral</strong>
+              <small id="macro-state">Macroestado neutro</small>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">Latencia</span>
+              <strong id="latency-value">--</strong>
+              <small id="trace-id">trace indisponivel</small>
+            </div>
+          </div>
+        </section>
+
+        <section class="top-grid">
+          <article class="panel compose-panel" id="composer">
+            <div class="panel-header">
+              <div>
+                <span class="pill-label">Entrada emocional</span>
+                <h3>Nucleo de interacao</h3>
+              </div>
+              <div class="panel-actions">
+                <button class="secondary-button" id="refresh-button" type="button">
+                  Atualizar estado
+                </button>
+              </div>
+            </div>
+
+            <div class="session-grid">
+              <div class="session-panel">
+                <label class="field-label" for="agent-select">Agente ativo</label>
+                <div class="inline-controls">
+                  <select id="agent-select"></select>
+                  <button class="secondary-button" id="sync-button" type="button">
+                    Sincronizar
+                  </button>
+                </div>
+              </div>
+
+              <form class="session-panel" id="create-agent-form">
+                <label class="field-label" for="agent-name">Nova sessao</label>
+                <div class="inline-stack">
+                  <input
+                    autocomplete="off"
+                    id="agent-name"
+                    placeholder="Nome do agente"
+                    type="text"
+                  />
+                  <input
+                    autocomplete="off"
+                    id="agent-id"
+                    placeholder="agent-emotional-lab"
+                    type="text"
+                  />
+                  <button class="primary-button" type="submit">Criar agente</button>
+                </div>
+              </form>
+            </div>
+
+            <form id="interaction-form">
+              <label class="field-label" for="text-input">Texto para analise</label>
+              <textarea
+                id="text-input"
+                name="text"
+                placeholder="Descreva como voce esta se sentindo, o contexto e o que precisa agora."
+                rows="7"
+              ></textarea>
+
+              <div class="suggestion-row" id="suggestion-row"></div>
+
+              <div class="form-footer">
+                <div>
+                  <strong class="footer-title">Streaming ativo</strong>
+                  <p class="muted" id="stream-status">
+                    A resposta sera consumida via <code>/api/v1/interact/stream</code>.
+                  </p>
+                </div>
+                <button class="primary-button submit-button" id="submit-button" type="submit">
+                  Analisar agora
+                </button>
+              </div>
+            </form>
+          </article>
+
+          <div class="top-stack">
+            <article class="panel score-card">
+              <div class="panel-header compact">
+                <div>
+                  <span class="pill-label">Sentiment index</span>
+                  <h3>Intensidade atual</h3>
+                </div>
+              </div>
+
+              <div class="gauge" id="intensity-gauge" style="--score: 0">
+                <div class="gauge-inner">
+                  <span>intensity</span>
+                  <strong id="intensity-value">0%</strong>
+                </div>
+              </div>
+
+              <p class="score-copy" id="intensity-copy">
+                Aguardando interacao para calcular o pulso emocional.
+              </p>
+            </article>
+
+            <article class="panel summary-card">
+              <div class="panel-header compact">
+                <div>
+                  <span class="pill-label">Leitura rapida</span>
+                  <h3>Resumo operacional</h3>
+                </div>
+              </div>
+
+              <div class="summary-grid">
+                <div>
+                  <span class="summary-label">Diretriz dominante</span>
+                  <strong id="dominant-axis">--</strong>
+                  <small id="dominant-axis-copy">Sem dados ainda.</small>
+                </div>
+                <div>
+                  <span class="summary-label">Calor social</span>
+                  <strong id="social-signal">--</strong>
+                  <small id="social-signal-copy">Sem dados ainda.</small>
+                </div>
+                <div>
+                  <span class="summary-label">Novidade</span>
+                  <strong id="novelty-signal">--</strong>
+                  <small id="novelty-signal-copy">Sem dados ainda.</small>
+                </div>
+              </div>
+
+              <div class="chip-cloud" id="tone-chip-cloud"></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="bottom-grid">
+          <article class="panel" id="vector-map-card">
+            <div class="panel-header">
+              <div>
+                <span class="pill-label">Mapa vetorial</span>
+                <h3>Emotion Vector Map</h3>
+              </div>
+            </div>
+            <div class="vector-map-frame" id="vector-map"></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-header">
+              <div>
+                <span class="pill-label">Componentes</span>
+                <h3>Distribuicao 6D</h3>
+              </div>
+            </div>
+            <div class="dimension-bars" id="dimension-bars"></div>
+            <div class="sparkline-card">
+              <div>
+                <span class="summary-label">Pulso historico</span>
+                <strong>Ultimas intensidades</strong>
+              </div>
+              <div class="sparkline" id="history-sparkline"></div>
+            </div>
+          </article>
+        </section>
+
+        <section class="panel" id="history-card">
+          <div class="panel-header">
+            <div>
+              <span class="pill-label">Persistencia</span>
+              <h3>Historico emocional</h3>
+            </div>
+          </div>
+          <div class="history-list" id="history-list"></div>
+        </section>
+
+        <section class="panel" id="transcript-card">
+          <div class="panel-header">
+            <div>
+              <span class="pill-label">Sessao corrente</span>
+              <h3>Timeline da interacao</h3>
+            </div>
+          </div>
+          <div class="transcript-list" id="transcript-list"></div>
+        </section>
+
+        <div class="toast hidden" id="toast"></div>
+      </main>
+    </div>
+  </body>
+</html>

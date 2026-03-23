@@ -325,6 +325,8 @@ Cada linha nao vazia do arquivo vira uma amostra do benchmark.
 
 ## Endpoints
 
+- Frontend do orchestrator: `GET /` serve uma UI estatica integrada aos
+  endpoints REST do proprio servico
 - Orchestrator: `GET /health`, `GET /ready`, `POST /api/v1/interact`,
   `POST /api/v1/interact/stream`,
   `POST|GET /api/v1/agents/`, `GET|PUT|DELETE /api/v1/agents/{agentID}/`,

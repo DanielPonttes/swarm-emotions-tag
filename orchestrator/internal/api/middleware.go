@@ -2,4 +2,4 @@ package api
 
 import "time"
 
-const defaultHTTPTimeout = 30 * time.Second
+const defaultHTTPTimeout = 2 * time.Minute

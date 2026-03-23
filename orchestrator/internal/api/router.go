@@ -17,6 +17,8 @@ func NewRouter(h *Handlers) http.Handler {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(defaultHTTPTimeout))
 
+	r.Get("/", h.AppShell)
+	r.Handle("/assets/*", http.StripPrefix("/assets/", UIAssets()))
 	r.Get("/health", h.Health)
 	r.Get("/ready", h.Ready)
 	r.Handle("/metrics", promhttp.Handler())

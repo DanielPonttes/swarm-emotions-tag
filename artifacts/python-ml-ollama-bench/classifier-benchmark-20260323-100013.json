@@ -1,0 +1,39 @@
+{
+  "mode": "ollama",
+  "model_name": "Qwen/Qwen3.5-27B",
+  "device": "cpu",
+  "top_k": 5,
+  "batch_size": 64,
+  "warmup_batches": 0,
+  "ollama_max_concurrency": 16,
+  "requested_duration_sec": 0.01,
+  "wall_time_sec": 40.24888088700027,
+  "texts": 10,
+  "completed_batches": 1,
+  "completed_items": 64,
+  "items_per_sec": 1.5901063231964532,
+  "batches_per_sec": 0.02484541129994458,
+  "avg_batch_latency_ms": 40248.836662999565,
+  "p95_batch_latency_ms": 40248.836662999565,
+  "p99_batch_latency_ms": 40248.836662999565,
+  "max_batch_latency_ms": 40248.836662999565,
+  "avg_item_latency_ms": 628.8880728593682,
+  "runtime": {
+    "torch_version": "2.10.0+cu128",
+    "cuda_available": true,
+    "cuda_device_count": 1,
+    "cuda_devices": [
+      "NVIDIA GeForce RTX 5090"
+    ]
+  },
+  "cuda_memory": [
+    {
+      "index": 0,
+      "name": "NVIDIA GeForce RTX 5090",
+      "memory_allocated_mb": 0.0,
+      "memory_reserved_mb": 0.0,
+      "max_memory_allocated_mb": 0.0,
+      "max_memory_reserved_mb": 0.0
+    }
+  ]
+}

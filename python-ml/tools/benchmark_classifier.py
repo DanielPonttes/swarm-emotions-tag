@@ -12,7 +12,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from app.classifier import DEFAULT_MODEL_NAME, EmotionClassifier
+from app.classifier import DEFAULT_MODEL_NAME, DEFAULT_OLLAMA_MAX_CONCURRENCY, EmotionClassifier
 from app.runtime import collect_runtime_info, runtime_info_dict
 
 DEFAULT_TEXTS = [
@@ -38,7 +38,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--ollama-base-url", default="http://127.0.0.1:11434")
     parser.add_argument("--request-timeout-sec", type=float, default=90.0)
-    parser.add_argument("--ollama-max-concurrency", type=int, default=8)
+    parser.add_argument("--ollama-max-concurrency", type=int, default=DEFAULT_OLLAMA_MAX_CONCURRENCY)
     parser.add_argument("--warmup-batches", type=int, default=10)
     parser.add_argument("--duration-sec", type=float, default=300.0)
     parser.add_argument("--texts-file", default="")

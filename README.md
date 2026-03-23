@@ -239,7 +239,7 @@ cd python-ml
 CLASSIFIER_MODE=ollama \
 CLASSIFIER_MODEL_NAME=Qwen/Qwen3.5-27B \
 CLASSIFIER_OLLAMA_BASE_URL=http://127.0.0.1:11434 \
-CLASSIFIER_OLLAMA_MAX_CONCURRENCY=8 \
+CLASSIFIER_OLLAMA_MAX_CONCURRENCY=16 \
 .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8090
 ```
 
@@ -286,7 +286,22 @@ Para uma rodada longa de benchmark/soak do classifier direto na GPU:
 ```bash
 CLASSIFIER_DEVICE=cuda:0 \
 CLASSIFIER_BATCH_SIZE=64 \
-CLASSIFIER_OLLAMA_MAX_CONCURRENCY=8 \
+CLASSIFIER_OLLAMA_MAX_CONCURRENCY=16 \
+PYTHON_ML_BENCH_DURATION_SEC=1800 \
+make python-ml-gpu-long-run
+```
+
+Para rodar o mesmo benchmark com o classificador em `ollama`, aponte o script
+para a instância correta do Ollama:
+
+```bash
+CLASSIFIER_MODE=ollama \
+CLASSIFIER_MODEL_NAME=Qwen/Qwen3.5-27B \
+CLASSIFIER_OLLAMA_BASE_URL=http://127.0.0.1:11436 \
+CLASSIFIER_REQUEST_TIMEOUT_SEC=120 \
+CLASSIFIER_DEVICE=cpu \
+CLASSIFIER_BATCH_SIZE=64 \
+CLASSIFIER_OLLAMA_MAX_CONCURRENCY=16 \
 PYTHON_ML_BENCH_DURATION_SEC=1800 \
 make python-ml-gpu-long-run
 ```

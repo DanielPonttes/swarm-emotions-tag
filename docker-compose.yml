@@ -102,6 +102,10 @@ services:
       CLASSIFIER_DEVICE: ${CLASSIFIER_DEVICE:-cpu}
       CLASSIFIER_TOP_K: ${CLASSIFIER_TOP_K:-5}
       CLASSIFIER_BATCH_SIZE: ${CLASSIFIER_BATCH_SIZE:-8}
+      CLASSIFIER_OLLAMA_BASE_URL: ${CLASSIFIER_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      CLASSIFIER_REQUEST_TIMEOUT_SEC: ${CLASSIFIER_REQUEST_TIMEOUT_SEC:-90}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
   grpc_socket:

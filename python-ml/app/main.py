@@ -5,7 +5,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.classifier import DEFAULT_MODEL_NAME, EmotionClassifier
+from app.classifier import (
+    DEFAULT_MODEL_NAME,
+    DEFAULT_OLLAMA_BASE_URL,
+    DEFAULT_REQUEST_TIMEOUT_SEC,
+    EmotionClassifier,
+)
 from app.runtime import collect_runtime_info, runtime_info_dict
 
 logger = logging.getLogger("uvicorn.error")
@@ -49,17 +54,27 @@ _runtime_info = runtime_info_dict(collect_runtime_info())
 _load_error: str | None = None
 
 
-def _classifier_config() -> tuple[str, str, str, int, int]:
+def _classifier_config() -> tuple[str, str, str, int, int, str, float]:
     mode = os.getenv("CLASSIFIER_MODE", "heuristic").strip().lower() or "heuristic"
     model_name = (
         os.getenv("CLASSIFIER_MODEL_NAME", "").strip()
         or os.getenv("MODEL_NAME", "").strip()
+        or os.getenv("LLM_MODEL", "").strip()
         or DEFAULT_MODEL_NAME
     )
     device = os.getenv("CLASSIFIER_DEVICE", "cpu").strip() or "cpu"
     top_k = int(os.getenv("CLASSIFIER_TOP_K", "5"))
     batch_size = int(os.getenv("CLASSIFIER_BATCH_SIZE", "8"))
-    return mode, model_name, device, top_k, batch_size
+    ollama_base_url = (
+        os.getenv("CLASSIFIER_OLLAMA_BASE_URL", "").strip()
+        or os.getenv("OLLAMA_BASE_URL", "").strip()
+        or os.getenv("LLM_BASE_URL", "").strip()
+        or DEFAULT_OLLAMA_BASE_URL
+    )
+    request_timeout_sec = float(
+        os.getenv("CLASSIFIER_REQUEST_TIMEOUT_SEC", str(DEFAULT_REQUEST_TIMEOUT_SEC))
+    )
+    return mode, model_name, device, top_k, batch_size, ollama_base_url, request_timeout_sec
 
 
 @asynccontextmanager
@@ -67,7 +82,15 @@ async def lifespan(_: FastAPI):
     global _classifier, _classifier_mode, _classifier_model_name
     global _classifier_device, _classifier_batch_size, _runtime_info, _load_error
 
-    _classifier_mode, _classifier_model_name, device, top_k, batch_size = _classifier_config()
+    (
+        _classifier_mode,
+        _classifier_model_name,
+        device,
+        top_k,
+        batch_size,
+        ollama_base_url,
+        request_timeout_sec,
+    ) = _classifier_config()
     _classifier_device = device
     _classifier_batch_size = max(1, batch_size)
     _runtime_info = runtime_info_dict(collect_runtime_info())
@@ -80,6 +103,8 @@ async def lifespan(_: FastAPI):
                 "device": device,
                 "top_k": top_k,
                 "batch_size": _classifier_batch_size,
+                "ollama_base_url": ollama_base_url,
+                "request_timeout_sec": request_timeout_sec,
                 "runtime": _runtime_info,
             },
         )
@@ -89,6 +114,8 @@ async def lifespan(_: FastAPI):
             device=device,
             top_k=top_k,
             batch_size=_classifier_batch_size,
+            ollama_base_url=ollama_base_url,
+            request_timeout_sec=request_timeout_sec,
         )
         _load_error = None
         logger.info("Emotion classifier loaded")

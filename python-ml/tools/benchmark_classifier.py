@@ -4,8 +4,13 @@ import argparse
 import itertools
 import json
 import math
+import sys
 import time
 from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from app.classifier import DEFAULT_MODEL_NAME, EmotionClassifier
 from app.runtime import collect_runtime_info, runtime_info_dict
@@ -31,6 +36,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--ollama-base-url", default="http://127.0.0.1:11434")
+    parser.add_argument("--request-timeout-sec", type=float, default=90.0)
     parser.add_argument("--warmup-batches", type=int, default=10)
     parser.add_argument("--duration-sec", type=float, default=300.0)
     parser.add_argument("--texts-file", default="")
@@ -133,6 +140,8 @@ def benchmark(args: argparse.Namespace) -> dict[str, object]:
         device=args.device,
         top_k=args.top_k,
         batch_size=args.batch_size,
+        ollama_base_url=args.ollama_base_url,
+        request_timeout_sec=args.request_timeout_sec,
     )
     runtime = runtime_info_dict(collect_runtime_info())
     validate_runtime(args.expected_gpu_substring, runtime)

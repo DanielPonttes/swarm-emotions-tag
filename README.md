@@ -164,6 +164,18 @@ Esse alvo valida cenarios isolados como `urgency -> anxious`,
 `frustrated -> calm` via `resolution`, `calm -> neutral` via `boredom` e
 `empathetic -> anxious` via `user_frustration`.
 
+Para validar o mesmo pipeline usando `Qwen/Qwen3.5-27B` tambem como
+classificador de emocao via Ollama local:
+
+```bash
+make phase3-qwen-emotions-local
+```
+
+Esse alvo rebuilda o `python-ml`, sobe o servico em `CLASSIFIER_MODE=ollama`,
+valida `POST /classify-emotion` diretamente contra o Qwen local e depois roda a
+matriz comportamental completa com Qwen tanto na geracao quanto na classificacao
+emocional.
+
 Para validar o mesmo pipeline com o classifier Python real em modo
 `transformers`, existe um alvo dedicado:
 
@@ -206,6 +218,7 @@ O `python-ml` agora suporta dois modos:
 
 - `CLASSIFIER_MODE=heuristic`: leve, sem dependencias extras, bom para smoke e desenvolvimento.
 - `CLASSIFIER_MODE=transformers`: carrega `monologg/bert-base-cased-goemotions-original` ou outro modelo compatível.
+- `CLASSIFIER_MODE=ollama`: usa um modelo servido por Ollama local, como `Qwen/Qwen3.5-27B`, e converte os labels retornados para o vetor emocional 6D atual.
 
 Para ativar o modo com modelo real em ambiente local:
 
@@ -214,6 +227,20 @@ cd python-ml
 .venv/bin/python -m pip install -e '.[ml]'
 CLASSIFIER_MODE=transformers CLASSIFIER_DEVICE=cuda:0 .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8090
 ```
+
+Para ativar o classificador por Ollama/Qwen no host:
+
+```bash
+cd python-ml
+CLASSIFIER_MODE=ollama \
+CLASSIFIER_MODEL_NAME=Qwen/Qwen3.5-27B \
+CLASSIFIER_OLLAMA_BASE_URL=http://127.0.0.1:11434 \
+.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8090
+```
+
+No `docker compose`, o `python-ml` passa a usar
+`CLASSIFIER_OLLAMA_BASE_URL=http://host.docker.internal:11434` por padrao,
+permitindo que o container fale com o Ollama rodando no host.
 
 No orquestrador:
 

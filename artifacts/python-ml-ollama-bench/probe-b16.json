@@ -1,0 +1,26 @@
+{
+  "mode": "ollama",
+  "model_name": "Qwen/Qwen3.5-27B",
+  "device": "cpu",
+  "top_k": 5,
+  "batch_size": 16,
+  "warmup_batches": 0,
+  "requested_duration_sec": 0.01,
+  "wall_time_sec": 11.241658514999472,
+  "texts": 10,
+  "completed_batches": 1,
+  "completed_items": 16,
+  "items_per_sec": 1.4232775331728489,
+  "batches_per_sec": 0.08895484582330306,
+  "avg_batch_latency_ms": 11241.633012999955,
+  "p95_batch_latency_ms": 11241.633012999955,
+  "p99_batch_latency_ms": 11241.633012999955,
+  "max_batch_latency_ms": 11241.633012999955,
+  "avg_item_latency_ms": 702.6020633124972,
+  "runtime": {
+    "torch_version": null,
+    "cuda_available": false,
+    "cuda_device_count": 0,
+    "cuda_devices": []
+  }
+}

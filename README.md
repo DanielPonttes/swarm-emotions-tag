@@ -239,12 +239,18 @@ cd python-ml
 CLASSIFIER_MODE=ollama \
 CLASSIFIER_MODEL_NAME=Qwen/Qwen3.5-27B \
 CLASSIFIER_OLLAMA_BASE_URL=http://127.0.0.1:11434 \
+CLASSIFIER_OLLAMA_MAX_CONCURRENCY=8 \
 .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8090
 ```
 
 No `docker compose`, o `python-ml` passa a usar
 `CLASSIFIER_OLLAMA_BASE_URL=http://host.docker.internal:11434` por padrao,
 permitindo que o container fale com o Ollama rodando no host.
+
+No modo `ollama`, `classify_many()` agora processa o lote com concorrencia
+controlada. O limite pode ser ajustado por
+`CLASSIFIER_OLLAMA_MAX_CONCURRENCY`; o valor efetivo tambem aparece no
+`/health` como `classifier_ollama_max_concurrency`.
 
 No orquestrador:
 
@@ -280,6 +286,7 @@ Para uma rodada longa de benchmark/soak do classifier direto na GPU:
 ```bash
 CLASSIFIER_DEVICE=cuda:0 \
 CLASSIFIER_BATCH_SIZE=64 \
+CLASSIFIER_OLLAMA_MAX_CONCURRENCY=8 \
 PYTHON_ML_BENCH_DURATION_SEC=1800 \
 make python-ml-gpu-long-run
 ```

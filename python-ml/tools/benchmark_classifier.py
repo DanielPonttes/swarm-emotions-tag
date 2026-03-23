@@ -38,6 +38,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--ollama-base-url", default="http://127.0.0.1:11434")
     parser.add_argument("--request-timeout-sec", type=float, default=90.0)
+    parser.add_argument("--ollama-max-concurrency", type=int, default=8)
     parser.add_argument("--warmup-batches", type=int, default=10)
     parser.add_argument("--duration-sec", type=float, default=300.0)
     parser.add_argument("--texts-file", default="")
@@ -142,6 +143,7 @@ def benchmark(args: argparse.Namespace) -> dict[str, object]:
         batch_size=args.batch_size,
         ollama_base_url=args.ollama_base_url,
         request_timeout_sec=args.request_timeout_sec,
+        ollama_max_concurrency=args.ollama_max_concurrency,
     )
     runtime = runtime_info_dict(collect_runtime_info())
     validate_runtime(args.expected_gpu_substring, runtime)
@@ -186,6 +188,7 @@ def benchmark(args: argparse.Namespace) -> dict[str, object]:
         "top_k": args.top_k,
         "batch_size": args.batch_size,
         "warmup_batches": args.warmup_batches,
+        "ollama_max_concurrency": args.ollama_max_concurrency,
         "requested_duration_sec": args.duration_sec,
         "wall_time_sec": wall_time_sec,
         "texts": len(texts),

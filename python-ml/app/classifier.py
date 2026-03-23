@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import re
 from dataclasses import dataclass
@@ -12,6 +13,7 @@ DEFAULT_MODEL_NAME = "monologg/bert-base-cased-goemotions-original"
 DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 DEFAULT_REQUEST_TIMEOUT_SEC = 90.0
 DEFAULT_OLLAMA_NUM_PREDICT = 160
+DEFAULT_OLLAMA_MAX_CONCURRENCY = 8
 
 GOEMOTIONS_TO_VECTOR = {
     "admiration": [0.6, 0.4, 0.3, 0.5, 0.7, 0.3],
@@ -78,6 +80,7 @@ class EmotionClassifier:
         batch_size: int = 8,
         ollama_base_url: str = DEFAULT_OLLAMA_BASE_URL,
         request_timeout_sec: float = DEFAULT_REQUEST_TIMEOUT_SEC,
+        ollama_max_concurrency: int = DEFAULT_OLLAMA_MAX_CONCURRENCY,
     ) -> None:
         self.mode = mode.strip().lower() or "heuristic"
         self.model_name = model_name.strip() or DEFAULT_MODEL_NAME
@@ -86,6 +89,7 @@ class EmotionClassifier:
         self.batch_size = max(1, batch_size)
         self.ollama_base_url = ollama_base_url.strip().rstrip("/") or DEFAULT_OLLAMA_BASE_URL
         self.request_timeout_sec = max(1.0, request_timeout_sec)
+        self.ollama_max_concurrency = max(1, ollama_max_concurrency)
         self._pipe: Any | None = None
         self._ollama_model_name = _normalize_ollama_model_name(self.model_name)
 
@@ -119,10 +123,7 @@ class EmotionClassifier:
         if self.mode == "transformers":
             return self._classify_many_with_transformers(normalized_texts)
         if self.mode == "ollama":
-            return [
-                self.classify(text)
-                for text in normalized_texts
-            ]
+            return self._classify_many_with_ollama(normalized_texts)
         return [self._classify_with_heuristics(text) for text in normalized_texts]
 
     def _build_transformers_pipeline(self) -> Any:
@@ -197,6 +198,34 @@ class EmotionClassifier:
             )
 
         return _combine_weighted_labels(weighted_scores)
+
+    def _classify_many_with_ollama(self, texts: list[str]) -> list[ClassificationResult]:
+        outputs: list[ClassificationResult] = [
+            ClassificationResult(
+                emotion_vector=NEUTRAL_VECTOR.copy(),
+                label="neutral",
+                confidence=0.0,
+            )
+            for _ in texts
+        ]
+        active_items = [(index, text) for index, text in enumerate(texts) if text]
+        if not active_items:
+            return outputs
+
+        max_workers = min(self.batch_size, self.ollama_max_concurrency, len(active_items))
+        if max_workers <= 1:
+            for index, text in active_items:
+                outputs[index] = self._classify_with_ollama(text)
+            return outputs
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_index = {
+                executor.submit(self._classify_with_ollama, text): index
+                for index, text in active_items
+            }
+            for future in as_completed(future_to_index):
+                outputs[future_to_index[future]] = future.result()
+        return outputs
 
     def _classify_with_ollama(self, text: str) -> ClassificationResult:
         raw_output = self._ollama_chat(text)

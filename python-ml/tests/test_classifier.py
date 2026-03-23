@@ -1,4 +1,6 @@
 import json
+import threading
+import time
 import unittest
 from unittest import mock
 
@@ -127,6 +129,62 @@ class EmotionClassifierBatchTests(unittest.TestCase):
 
         self.assertEqual(result.label, "nervousness")
         self.assertEqual(len(result.emotion_vector), 6)
+
+    def test_classify_many_with_ollama_preserves_order_and_limits_concurrency(self) -> None:
+        active_calls = 0
+        max_active_calls = 0
+        lock = threading.Lock()
+        label_by_text = {
+            "thanks for the quick fix": "gratitude",
+            "this is urgent and I am worried about the deadline": "nervousness",
+            "tell me more, I am curious about this design": "curiosity",
+            "this is awesome and I am very happy with the result": "joy",
+        }
+
+        def fake_ollama_chat(text: str) -> str:
+            nonlocal active_calls, max_active_calls
+            with lock:
+                active_calls += 1
+                max_active_calls = max(max_active_calls, active_calls)
+            try:
+                time.sleep(0.03)
+                return json.dumps(
+                    {
+                        "labels": [
+                            {
+                                "label": label_by_text[text],
+                                "score": 1.0,
+                            }
+                        ]
+                    }
+                )
+            finally:
+                with lock:
+                    active_calls -= 1
+
+        with mock.patch.object(EmotionClassifier, "_verify_ollama_model"), mock.patch.object(
+            EmotionClassifier,
+            "_ollama_chat",
+            side_effect=fake_ollama_chat,
+        ):
+            classifier = EmotionClassifier(
+                mode="ollama",
+                model_name="Qwen/Qwen3.5-27B",
+                batch_size=8,
+                ollama_max_concurrency=2,
+            )
+            results = classifier.classify_many(
+                [
+                    "thanks for the quick fix",
+                    "",
+                    "this is urgent and I am worried about the deadline",
+                    "tell me more, I am curious about this design",
+                    "this is awesome and I am very happy with the result",
+                ]
+            )
+
+        self.assertEqual([result.label for result in results], ["gratitude", "neutral", "nervousness", "curiosity", "joy"])
+        self.assertEqual(max_active_calls, 2)
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from app.classifier import (
     DEFAULT_MODEL_NAME,
     DEFAULT_OLLAMA_BASE_URL,
+    DEFAULT_OLLAMA_MAX_CONCURRENCY,
     DEFAULT_REQUEST_TIMEOUT_SEC,
     EmotionClassifier,
 )
@@ -31,6 +32,7 @@ class HealthResponse(BaseModel):
     model_name: str
     classifier_device: str
     classifier_batch_size: int
+    classifier_ollama_max_concurrency: int
     runtime: RuntimeInfoResponse
     load_error: str | None = None
 
@@ -50,11 +52,12 @@ _classifier_mode = "heuristic"
 _classifier_model_name = DEFAULT_MODEL_NAME
 _classifier_device = "cpu"
 _classifier_batch_size = 8
+_classifier_ollama_max_concurrency = DEFAULT_OLLAMA_MAX_CONCURRENCY
 _runtime_info = runtime_info_dict(collect_runtime_info())
 _load_error: str | None = None
 
 
-def _classifier_config() -> tuple[str, str, str, int, int, str, float]:
+def _classifier_config() -> tuple[str, str, str, int, int, str, float, int]:
     mode = os.getenv("CLASSIFIER_MODE", "heuristic").strip().lower() or "heuristic"
     model_name = (
         os.getenv("CLASSIFIER_MODEL_NAME", "").strip()
@@ -74,13 +77,29 @@ def _classifier_config() -> tuple[str, str, str, int, int, str, float]:
     request_timeout_sec = float(
         os.getenv("CLASSIFIER_REQUEST_TIMEOUT_SEC", str(DEFAULT_REQUEST_TIMEOUT_SEC))
     )
-    return mode, model_name, device, top_k, batch_size, ollama_base_url, request_timeout_sec
+    ollama_max_concurrency = int(
+        os.getenv(
+            "CLASSIFIER_OLLAMA_MAX_CONCURRENCY",
+            str(DEFAULT_OLLAMA_MAX_CONCURRENCY),
+        )
+    )
+    return (
+        mode,
+        model_name,
+        device,
+        top_k,
+        batch_size,
+        ollama_base_url,
+        request_timeout_sec,
+        ollama_max_concurrency,
+    )
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global _classifier, _classifier_mode, _classifier_model_name
-    global _classifier_device, _classifier_batch_size, _runtime_info, _load_error
+    global _classifier_device, _classifier_batch_size, _classifier_ollama_max_concurrency
+    global _runtime_info, _load_error
 
     (
         _classifier_mode,
@@ -90,9 +109,11 @@ async def lifespan(_: FastAPI):
         batch_size,
         ollama_base_url,
         request_timeout_sec,
+        ollama_max_concurrency,
     ) = _classifier_config()
     _classifier_device = device
     _classifier_batch_size = max(1, batch_size)
+    _classifier_ollama_max_concurrency = max(1, ollama_max_concurrency)
     _runtime_info = runtime_info_dict(collect_runtime_info())
     try:
         logger.info(
@@ -105,6 +126,7 @@ async def lifespan(_: FastAPI):
                 "batch_size": _classifier_batch_size,
                 "ollama_base_url": ollama_base_url,
                 "request_timeout_sec": request_timeout_sec,
+                "ollama_max_concurrency": _classifier_ollama_max_concurrency,
                 "runtime": _runtime_info,
             },
         )
@@ -116,6 +138,7 @@ async def lifespan(_: FastAPI):
             batch_size=_classifier_batch_size,
             ollama_base_url=ollama_base_url,
             request_timeout_sec=request_timeout_sec,
+            ollama_max_concurrency=_classifier_ollama_max_concurrency,
         )
         _load_error = None
         logger.info("Emotion classifier loaded")
@@ -153,6 +176,7 @@ async def health() -> HealthResponse:
         model_name=_classifier_model_name,
         classifier_device=_classifier_device,
         classifier_batch_size=_classifier_batch_size,
+        classifier_ollama_max_concurrency=_classifier_ollama_max_concurrency,
         runtime=RuntimeInfoResponse(**_runtime_info),
         load_error=_load_error,
     )

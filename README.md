@@ -177,6 +177,8 @@ matriz comportamental completa com Qwen tanto na geracao quanto na classificacao
 emocional.
 Se o `python-ml` em container nao conseguir alcancar o Ollama do host, o script
 faz fallback automatico para um `python-ml` temporario em `--network host`.
+O mesmo fallback automatico tambem passou a valer para os outros alvos Qwen da
+Fase 3 quando `CLASSIFIER_MODE=ollama` estiver ativo.
 
 Para validar o mesmo pipeline com o classifier Python real em modo
 `transformers`, existe um alvo dedicado:

@@ -17,13 +17,20 @@ phase3_validate_ollama_classifier() {
   )
 
   health_response="$(curl -fsS "$PYTHON_ML_URL/health")"
-  python3 - "$health_response" "$CLASSIFIER_MODE" "$CLASSIFIER_MODEL_NAME" <<'PY'
+  python3 - \
+    "$health_response" \
+    "$CLASSIFIER_MODE" \
+    "$CLASSIFIER_MODEL_NAME" \
+    "$CLASSIFIER_BATCH_SIZE" \
+    "$CLASSIFIER_OLLAMA_MAX_CONCURRENCY" <<'PY'
 import json
 import sys
 
 payload = json.loads(sys.argv[1])
 expected_mode = sys.argv[2]
 expected_model = sys.argv[3]
+expected_batch_size = sys.argv[4]
+expected_concurrency = sys.argv[5]
 
 if payload.get("classifier_mode") != expected_mode:
     raise SystemExit(
@@ -32,6 +39,15 @@ if payload.get("classifier_mode") != expected_mode:
 if payload.get("model_name") != expected_model:
     raise SystemExit(
         f"expected model_name={expected_model!r}, got {payload.get('model_name')!r}"
+    )
+if str(payload.get("classifier_batch_size")) != expected_batch_size:
+    raise SystemExit(
+        f"expected classifier_batch_size={expected_batch_size!r}, got {payload.get('classifier_batch_size')!r}"
+    )
+if str(payload.get("classifier_ollama_max_concurrency")) != expected_concurrency:
+    raise SystemExit(
+        "expected classifier_ollama_max_concurrency="
+        f"{expected_concurrency!r}, got {payload.get('classifier_ollama_max_concurrency')!r}"
     )
 if not payload.get("model_loaded"):
     raise SystemExit("Qwen emotion classifier is not loaded")
@@ -113,6 +129,8 @@ PHASE2_WAIT_PYTHON_SEC="${PHASE2_WAIT_PYTHON_SEC:-180}"
 PHASE3_CLASSIFIER_READY_TIMEOUT_SEC="${PHASE3_CLASSIFIER_READY_TIMEOUT_SEC:-240}"
 CLASSIFIER_MODE="${CLASSIFIER_MODE:-ollama}"
 CLASSIFIER_MODEL_NAME="${CLASSIFIER_MODEL_NAME:-Qwen/Qwen3.5-27B}"
+CLASSIFIER_TOP_K="${CLASSIFIER_TOP_K:-5}"
+CLASSIFIER_BATCH_SIZE="${CLASSIFIER_BATCH_SIZE:-8}"
 CLASSIFIER_OLLAMA_BASE_URL="${CLASSIFIER_OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
 CLASSIFIER_REQUEST_TIMEOUT_SEC="${CLASSIFIER_REQUEST_TIMEOUT_SEC:-120}"
 CLASSIFIER_OLLAMA_MAX_CONCURRENCY="${CLASSIFIER_OLLAMA_MAX_CONCURRENCY:-16}"
@@ -128,7 +146,8 @@ OLLAMA_MODEL_TAG="${OLLAMA_MODEL_TAG:-qwen3.5:27b}"
 PHASE3_MULTI_MAX_LATENCY_MS="${PHASE3_MULTI_MAX_LATENCY_MS:-5000}"
 
 export PHASE2_KEEP_STACK_UP PHASE2_WAIT_PYTHON_SEC PHASE3_CLASSIFIER_READY_TIMEOUT_SEC
-export CLASSIFIER_MODE CLASSIFIER_MODEL_NAME CLASSIFIER_OLLAMA_BASE_URL
+export CLASSIFIER_MODE CLASSIFIER_MODEL_NAME CLASSIFIER_TOP_K CLASSIFIER_BATCH_SIZE
+export CLASSIFIER_OLLAMA_BASE_URL
 export CLASSIFIER_REQUEST_TIMEOUT_SEC CLASSIFIER_OLLAMA_MAX_CONCURRENCY
 export PHASE3_QWEN_PYTHON_ML_HOST_MODE PHASE3_QWEN_PYTHON_ML_HOST_BIND_HOST
 export PHASE3_QWEN_PYTHON_ML_HOST_PORT PHASE3_PYTHON_ML_HOST_CONTAINER_NAME

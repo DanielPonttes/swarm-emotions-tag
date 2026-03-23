@@ -18,20 +18,60 @@ phase3_wait_for_ollama() {
 
 phase3_wait_for_classifier_model() {
   local timeout_sec="${1:-120}"
-  local started_at response
+  local started_at response validation_output validation_status=0
 
   started_at="$(date +%s)"
   while true; do
     response="$(curl -fsS "$PYTHON_ML_URL/health")"
-    if python3 - "$response" <<'PY'
+    if validation_output="$(
+      python3 - \
+        "$response" \
+        "${CLASSIFIER_MODE:-}" \
+        "${CLASSIFIER_MODEL_NAME:-}" \
+        "${CLASSIFIER_BATCH_SIZE:-}" \
+        "${CLASSIFIER_OLLAMA_MAX_CONCURRENCY:-}" 2>&1 <<'PY'
 import json
 import sys
 
 payload = json.loads(sys.argv[1])
-raise SystemExit(0 if payload.get("model_loaded") else 1)
+expected_mode = sys.argv[2].strip()
+expected_model = sys.argv[3].strip()
+expected_batch_size = sys.argv[4].strip()
+expected_ollama_concurrency = sys.argv[5].strip()
+
+if not payload.get("model_loaded"):
+    raise SystemExit(2)
+
+if expected_mode and payload.get("classifier_mode") != expected_mode:
+    raise SystemExit(
+        f"expected classifier_mode={expected_mode!r}, got {payload.get('classifier_mode')!r}"
+    )
+if expected_model and payload.get("model_name") != expected_model:
+    raise SystemExit(
+        f"expected model_name={expected_model!r}, got {payload.get('model_name')!r}"
+    )
+if expected_batch_size and str(payload.get("classifier_batch_size")) != expected_batch_size:
+    raise SystemExit(
+        f"expected classifier_batch_size={expected_batch_size!r}, got {payload.get('classifier_batch_size')!r}"
+    )
+if (
+    expected_mode == "ollama"
+    and expected_ollama_concurrency
+    and str(payload.get("classifier_ollama_max_concurrency")) != expected_ollama_concurrency
+):
+    raise SystemExit(
+        "expected classifier_ollama_max_concurrency="
+        f"{expected_ollama_concurrency!r}, got {payload.get('classifier_ollama_max_concurrency')!r}"
+    )
 PY
-    then
+    )"; then
       return 0
+    fi
+    validation_status=$?
+    if [ "$validation_status" -ne 2 ]; then
+      echo "$validation_output" >&2
+      echo "$response" >&2
+      return 1
     fi
 
     if [ "$(( $(date +%s) - started_at ))" -ge "$timeout_sec" ]; then
@@ -46,6 +86,8 @@ PY
 phase3_init_python_ml_runtime_defaults() {
   CLASSIFIER_MODE="${CLASSIFIER_MODE:-heuristic}"
   CLASSIFIER_MODEL_NAME="${CLASSIFIER_MODEL_NAME:-monologg/bert-base-cased-goemotions-original}"
+  CLASSIFIER_TOP_K="${CLASSIFIER_TOP_K:-5}"
+  CLASSIFIER_BATCH_SIZE="${CLASSIFIER_BATCH_SIZE:-8}"
   CLASSIFIER_OLLAMA_BASE_URL="${CLASSIFIER_OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
   CLASSIFIER_REQUEST_TIMEOUT_SEC="${CLASSIFIER_REQUEST_TIMEOUT_SEC:-120}"
   CLASSIFIER_OLLAMA_MAX_CONCURRENCY="${CLASSIFIER_OLLAMA_MAX_CONCURRENCY:-16}"
@@ -55,7 +97,8 @@ phase3_init_python_ml_runtime_defaults() {
   PHASE3_PYTHON_ML_HOST_CONTAINER_NAME="${PHASE3_PYTHON_ML_HOST_CONTAINER_NAME:-phase3-python-ml-host-$$}"
   PHASE3_PYTHON_ML_RUNTIME_MODE="${PHASE3_PYTHON_ML_RUNTIME_MODE:-container}"
   PHASE3_PYTHON_ML_RUNTIME_OWNER_PID="${PHASE3_PYTHON_ML_RUNTIME_OWNER_PID:-}"
-  export CLASSIFIER_MODE CLASSIFIER_MODEL_NAME CLASSIFIER_OLLAMA_BASE_URL
+  export CLASSIFIER_MODE CLASSIFIER_MODEL_NAME CLASSIFIER_TOP_K CLASSIFIER_BATCH_SIZE
+  export CLASSIFIER_OLLAMA_BASE_URL
   export CLASSIFIER_REQUEST_TIMEOUT_SEC CLASSIFIER_OLLAMA_MAX_CONCURRENCY
   export PHASE3_QWEN_PYTHON_ML_HOST_MODE PHASE3_QWEN_PYTHON_ML_HOST_BIND_HOST
   export PHASE3_QWEN_PYTHON_ML_HOST_PORT PHASE3_PYTHON_ML_HOST_CONTAINER_NAME
@@ -91,6 +134,8 @@ phase3_start_python_ml_host_container() {
     -e PORT="$bind_port" \
     -e CLASSIFIER_MODE="$CLASSIFIER_MODE" \
     -e CLASSIFIER_MODEL_NAME="$CLASSIFIER_MODEL_NAME" \
+    -e CLASSIFIER_TOP_K="$CLASSIFIER_TOP_K" \
+    -e CLASSIFIER_BATCH_SIZE="$CLASSIFIER_BATCH_SIZE" \
     -e CLASSIFIER_OLLAMA_BASE_URL="$ollama_base_url" \
     -e CLASSIFIER_REQUEST_TIMEOUT_SEC="$CLASSIFIER_REQUEST_TIMEOUT_SEC" \
     -e CLASSIFIER_OLLAMA_MAX_CONCURRENCY="$CLASSIFIER_OLLAMA_MAX_CONCURRENCY" \

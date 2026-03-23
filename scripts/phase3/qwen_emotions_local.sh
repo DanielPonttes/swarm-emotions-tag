@@ -5,82 +5,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/common.sh"
 
-phase3_probe_containerized_ollama_access() {
-  local ollama_url="$1"
-
-  phase2_docker run --rm \
-    --add-host host.docker.internal:host-gateway \
-    swarm-emotions-tag-python-ml \
-    python -c "import urllib.request; urllib.request.urlopen('${ollama_url}', timeout=10).read()" \
-    >/dev/null 2>&1
-}
-
-phase3_start_python_ml_host_container() {
-  local image_name="$1"
-  local bind_host="$2"
-  local bind_port="$3"
-  local ollama_base_url="$4"
-
-  phase2_docker rm -f "$PHASE3_PYTHON_ML_HOST_CONTAINER_NAME" >/dev/null 2>&1 || true
-
-  phase2_docker run -d --rm \
-    --name "$PHASE3_PYTHON_ML_HOST_CONTAINER_NAME" \
-    --network host \
-    -e PORT="$bind_port" \
-    -e CLASSIFIER_MODE="$CLASSIFIER_MODE" \
-    -e CLASSIFIER_MODEL_NAME="$CLASSIFIER_MODEL_NAME" \
-    -e CLASSIFIER_OLLAMA_BASE_URL="$ollama_base_url" \
-    -e CLASSIFIER_REQUEST_TIMEOUT_SEC="$CLASSIFIER_REQUEST_TIMEOUT_SEC" \
-    "$image_name" \
-    uvicorn app.main:app --host "$bind_host" --port "$bind_port" \
-    >/dev/null
-}
-
-phase3_cleanup_python_ml_host_container() {
-  if [ -n "${PHASE3_PYTHON_ML_HOST_CONTAINER_NAME:-}" ]; then
-    phase2_docker rm -f "$PHASE3_PYTHON_ML_HOST_CONTAINER_NAME" >/dev/null 2>&1 || true
-  fi
-}
-
-phase3_prepare_python_ml_runtime() {
-  local image_name="swarm-emotions-tag-python-ml"
-  local ollama_probe_url
-  local host_mode_enabled="${PHASE3_QWEN_PYTHON_ML_HOST_MODE:-auto}"
-
-  ollama_probe_url="${CLASSIFIER_OLLAMA_BASE_URL%/}/api/version"
-
-  case "$host_mode_enabled" in
-    true)
-      ;;
-    false)
-      return 0
-      ;;
-    auto)
-      if phase3_probe_containerized_ollama_access "$ollama_probe_url"; then
-        return 0
-      fi
-      ;;
-    *)
-      echo "invalid PHASE3_QWEN_PYTHON_ML_HOST_MODE: $host_mode_enabled" >&2
-      return 1
-      ;;
-  esac
-
-  echo "Containerized python-ml cannot reach Ollama at $CLASSIFIER_OLLAMA_BASE_URL; using host-network python-ml fallback..."
-  PHASE2_SUPPORT_SERVICES="redis postgresql qdrant emotion-engine"
-  PYTHON_ML_URL="http://${PHASE3_QWEN_PYTHON_ML_HOST_BIND_HOST}:${PHASE3_QWEN_PYTHON_ML_HOST_PORT}"
-  CLASSIFIER_OLLAMA_BASE_URL="$LLM_BASE_URL"
-  export PHASE2_SUPPORT_SERVICES PYTHON_ML_URL CLASSIFIER_OLLAMA_BASE_URL
-
-  phase3_start_python_ml_host_container \
-    "$image_name" \
-    "$PHASE3_QWEN_PYTHON_ML_HOST_BIND_HOST" \
-    "$PHASE3_QWEN_PYTHON_ML_HOST_PORT" \
-    "$CLASSIFIER_OLLAMA_BASE_URL"
-
-  phase2_wait_for_http "python-ml-host" "$PYTHON_ML_URL/health" "$PHASE3_CLASSIFIER_READY_TIMEOUT_SEC"
-}
-
 phase3_validate_ollama_classifier() {
   local responses_file="$1"
   local health_response
@@ -221,7 +145,7 @@ cleanup_files() {
   rm -f "$classifier_results_file"
 }
 
-trap 'phase3_cleanup_python_ml_host_container; phase2_cleanup_stack; cleanup_files' EXIT
+trap 'phase3_cleanup_python_ml_runtime; phase2_cleanup_stack; cleanup_files' EXIT
 
 echo "Waiting for local Ollama..."
 phase3_wait_for_ollama

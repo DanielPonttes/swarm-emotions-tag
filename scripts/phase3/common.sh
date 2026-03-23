@@ -43,6 +43,145 @@ PY
   done
 }
 
+phase3_init_python_ml_runtime_defaults() {
+  CLASSIFIER_MODE="${CLASSIFIER_MODE:-heuristic}"
+  CLASSIFIER_MODEL_NAME="${CLASSIFIER_MODEL_NAME:-monologg/bert-base-cased-goemotions-original}"
+  CLASSIFIER_OLLAMA_BASE_URL="${CLASSIFIER_OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
+  CLASSIFIER_REQUEST_TIMEOUT_SEC="${CLASSIFIER_REQUEST_TIMEOUT_SEC:-120}"
+  PHASE3_QWEN_PYTHON_ML_HOST_MODE="${PHASE3_QWEN_PYTHON_ML_HOST_MODE:-auto}"
+  PHASE3_QWEN_PYTHON_ML_HOST_BIND_HOST="${PHASE3_QWEN_PYTHON_ML_HOST_BIND_HOST:-127.0.0.1}"
+  PHASE3_QWEN_PYTHON_ML_HOST_PORT="${PHASE3_QWEN_PYTHON_ML_HOST_PORT:-8091}"
+  PHASE3_PYTHON_ML_HOST_CONTAINER_NAME="${PHASE3_PYTHON_ML_HOST_CONTAINER_NAME:-phase3-python-ml-host-$$}"
+  PHASE3_PYTHON_ML_RUNTIME_MODE="${PHASE3_PYTHON_ML_RUNTIME_MODE:-container}"
+  PHASE3_PYTHON_ML_RUNTIME_OWNER_PID="${PHASE3_PYTHON_ML_RUNTIME_OWNER_PID:-}"
+  export CLASSIFIER_MODE CLASSIFIER_MODEL_NAME CLASSIFIER_OLLAMA_BASE_URL CLASSIFIER_REQUEST_TIMEOUT_SEC
+  export PHASE3_QWEN_PYTHON_ML_HOST_MODE PHASE3_QWEN_PYTHON_ML_HOST_BIND_HOST
+  export PHASE3_QWEN_PYTHON_ML_HOST_PORT PHASE3_PYTHON_ML_HOST_CONTAINER_NAME
+  export PHASE3_PYTHON_ML_RUNTIME_MODE PHASE3_PYTHON_ML_RUNTIME_OWNER_PID
+}
+
+phase3_ensure_python_ml_image() {
+  if phase2_docker image inspect swarm-emotions-tag-python-ml >/dev/null 2>&1; then
+    return 0
+  fi
+  phase2_docker_compose build python-ml
+}
+
+phase3_probe_containerized_ollama_access() {
+  local ollama_url="$1"
+
+  phase2_docker run --rm \
+    --add-host host.docker.internal:host-gateway \
+    swarm-emotions-tag-python-ml \
+    python -c "import urllib.request; urllib.request.urlopen('${ollama_url}', timeout=10).read()" \
+    >/dev/null 2>&1
+}
+
+phase3_start_python_ml_host_container() {
+  local bind_host="$1"
+  local bind_port="$2"
+  local ollama_base_url="$3"
+
+  phase2_docker rm -f "$PHASE3_PYTHON_ML_HOST_CONTAINER_NAME" >/dev/null 2>&1 || true
+  phase2_docker run -d --rm \
+    --name "$PHASE3_PYTHON_ML_HOST_CONTAINER_NAME" \
+    --network host \
+    -e PORT="$bind_port" \
+    -e CLASSIFIER_MODE="$CLASSIFIER_MODE" \
+    -e CLASSIFIER_MODEL_NAME="$CLASSIFIER_MODEL_NAME" \
+    -e CLASSIFIER_OLLAMA_BASE_URL="$ollama_base_url" \
+    -e CLASSIFIER_REQUEST_TIMEOUT_SEC="$CLASSIFIER_REQUEST_TIMEOUT_SEC" \
+    swarm-emotions-tag-python-ml \
+    uvicorn app.main:app --host "$bind_host" --port "$bind_port" \
+    >/dev/null
+
+  PHASE3_PYTHON_ML_RUNTIME_MODE="host"
+  PHASE3_PYTHON_ML_RUNTIME_OWNER_PID="$$"
+  export PHASE3_PYTHON_ML_RUNTIME_MODE PHASE3_PYTHON_ML_RUNTIME_OWNER_PID
+}
+
+phase3_cleanup_python_ml_runtime() {
+  if [ "${PHASE3_PYTHON_ML_RUNTIME_MODE:-}" != "host" ]; then
+    return 0
+  fi
+  if [ "${PHASE3_PYTHON_ML_RUNTIME_OWNER_PID:-}" != "$$" ]; then
+    return 0
+  fi
+  phase2_docker rm -f "$PHASE3_PYTHON_ML_HOST_CONTAINER_NAME" >/dev/null 2>&1 || true
+}
+
+phase3_exclude_python_ml_from_support_services() {
+  local service
+  local filtered=()
+  local services=()
+
+  # shellcheck disable=SC2206
+  services=($PHASE2_SUPPORT_SERVICES)
+  for service in "${services[@]}"; do
+    if [ "$service" != "python-ml" ]; then
+      filtered+=("$service")
+    fi
+  done
+
+  PHASE2_SUPPORT_SERVICES="${filtered[*]}"
+  export PHASE2_SUPPORT_SERVICES
+}
+
+phase3_prepare_python_ml_runtime() {
+  local host_mode
+  local ollama_probe_url
+  local host_ollama_base_url
+
+  phase3_init_python_ml_runtime_defaults
+
+  if [ "$CLASSIFIER_MODE" != "ollama" ]; then
+    return 0
+  fi
+
+  if [ "${PHASE3_PYTHON_ML_RUNTIME_MODE:-}" = "host" ]; then
+    phase3_exclude_python_ml_from_support_services
+    if curl -fsS "$PYTHON_ML_URL/health" >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+
+  host_mode="$PHASE3_QWEN_PYTHON_ML_HOST_MODE"
+  ollama_probe_url="${CLASSIFIER_OLLAMA_BASE_URL%/}/api/version"
+
+  case "$host_mode" in
+    false)
+      PHASE3_PYTHON_ML_RUNTIME_MODE="container"
+      export PHASE3_PYTHON_ML_RUNTIME_MODE
+      return 0
+      ;;
+    auto|true)
+      phase3_ensure_python_ml_image
+      if [ "$host_mode" = "auto" ] && phase3_probe_containerized_ollama_access "$ollama_probe_url"; then
+        PHASE3_PYTHON_ML_RUNTIME_MODE="container"
+        export PHASE3_PYTHON_ML_RUNTIME_MODE
+        return 0
+      fi
+      ;;
+    *)
+      echo "invalid PHASE3_QWEN_PYTHON_ML_HOST_MODE: $host_mode" >&2
+      return 1
+      ;;
+  esac
+
+  echo "Containerized python-ml cannot reach Ollama at $CLASSIFIER_OLLAMA_BASE_URL; using host-network python-ml fallback..."
+  host_ollama_base_url="$(phase3_normalize_ollama_base_url "$LLM_BASE_URL")"
+  phase3_exclude_python_ml_from_support_services
+  PYTHON_ML_URL="http://${PHASE3_QWEN_PYTHON_ML_HOST_BIND_HOST}:${PHASE3_QWEN_PYTHON_ML_HOST_PORT}"
+  CLASSIFIER_OLLAMA_BASE_URL="$host_ollama_base_url"
+  export PYTHON_ML_URL CLASSIFIER_OLLAMA_BASE_URL
+
+  phase3_start_python_ml_host_container \
+    "$PHASE3_QWEN_PYTHON_ML_HOST_BIND_HOST" \
+    "$PHASE3_QWEN_PYTHON_ML_HOST_PORT" \
+    "$CLASSIFIER_OLLAMA_BASE_URL"
+  phase2_wait_for_http "python-ml-host" "$PYTHON_ML_URL/health" "${PHASE3_CLASSIFIER_READY_TIMEOUT_SEC:-120}"
+}
+
 phase3_require_ollama_model() {
   if ! ollama list | awk 'NR > 1 { print $1 }' | grep -Fx "$OLLAMA_MODEL_TAG" >/dev/null 2>&1; then
     echo "missing Ollama model: $OLLAMA_MODEL_TAG" >&2
@@ -200,17 +339,29 @@ phase3_wait_for_service_trace() {
 
   started_at="$(date +%s)"
   while true; do
-    if phase2_docker_compose logs --since 2m "$service" 2>&1 | grep -F "$trace_id" >/dev/null 2>&1; then
+    if phase3_service_logs_since "$service" "2m" | grep -F "$trace_id" >/dev/null 2>&1; then
       return 0
     fi
 
     if [ "$(( $(date +%s) - started_at ))" -ge "$timeout_sec" ]; then
       echo "timed out waiting for trace $trace_id in logs for service $service" >&2
-      phase2_docker_compose logs --since 2m "$service" 2>&1 | tail -n 80 >&2 || true
+      phase3_service_logs_since "$service" "2m" | tail -n 80 >&2 || true
       return 1
     fi
     sleep 1
   done
+}
+
+phase3_service_logs_since() {
+  local service="$1"
+  local since="${2:-2m}"
+
+  if [ "$service" = "python-ml" ] && [ "${PHASE3_PYTHON_ML_RUNTIME_MODE:-}" = "host" ]; then
+    phase2_docker logs --since "$since" "$PHASE3_PYTHON_ML_HOST_CONTAINER_NAME" 2>&1
+    return
+  fi
+
+  phase2_docker_compose logs --since "$since" "$service" 2>&1
 }
 
 phase3_wait_for_redis_min_entries() {

@@ -87,7 +87,9 @@ phase2_require_cmd go
 phase2_require_cmd python3
 phase2_require_cmd ollama
 
-trap 'phase2_cleanup_orchestrator; phase2_cleanup_stack' EXIT
+trap 'phase2_cleanup_orchestrator; phase3_cleanup_python_ml_runtime; phase2_cleanup_stack' EXIT
+
+phase3_prepare_python_ml_runtime
 
 echo "Starting real dependencies for Phase 3 smoke test..."
 phase2_compose_up_support

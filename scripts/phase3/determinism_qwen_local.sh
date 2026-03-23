@@ -95,7 +95,9 @@ cleanup_files() {
   rm -f "$history_run_1" "$history_run_2" "$latency_run_1" "$latency_run_2"
 }
 
-trap 'phase2_cleanup_orchestrator; phase2_cleanup_stack; cleanup_files' EXIT
+trap 'phase2_cleanup_orchestrator; phase3_cleanup_python_ml_runtime; phase2_cleanup_stack; cleanup_files' EXIT
+
+phase3_prepare_python_ml_runtime
 
 echo "Starting real dependencies for Phase 3 deterministic regression..."
 phase2_compose_up_support

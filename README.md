@@ -330,7 +330,8 @@ Cada linha nao vazia do arquivo vira uma amostra do benchmark.
 - Orchestrator: `GET /health`, `GET /ready`, `POST /api/v1/interact`,
   `POST /api/v1/interact/stream`,
   `POST|GET /api/v1/agents/`, `GET|PUT|DELETE /api/v1/agents/{agentID}/`,
-  `GET /api/v1/agents/{agentID}/state`, `GET /api/v1/agents/{agentID}/history`
+  `GET /api/v1/agents/{agentID}/state`, `GET /api/v1/agents/{agentID}/history`,
+  `GET /api/v1/agents/{agentID}/interactions`
 - Python ML: `GET /health`, `POST /classify-emotion`
 - Emotion Engine: gRPC `emotion_engine.v1.EmotionEngineService`
   (`TransitionState`, `ComputeEmotionVector`, `FuseScores`, `EvaluatePromotion`,

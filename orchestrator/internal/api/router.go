@@ -49,6 +49,7 @@ func NewRouter(h *Handlers) http.Handler {
 				r.Delete("/", h.DeleteAgent)
 				r.Get("/state", h.GetAgentState)
 				r.Get("/history", h.GetEmotionHistory)
+				r.Get("/interactions", h.GetInteractionLogs)
 			})
 		})
 	})

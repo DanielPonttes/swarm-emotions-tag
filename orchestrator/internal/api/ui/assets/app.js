@@ -84,6 +84,7 @@ const state = {
   agents: [],
   activeAgentId: "",
   history: [],
+  interactions: [],
   agentState: null,
   transcript: [],
   ready: {
@@ -225,24 +226,51 @@ async function setActiveAgent(agentID, options = {}) {
   await refreshAgentData();
 }
 
-async function refreshAgentData() {
+async function refreshAgentData(options = {}) {
   if (!state.activeAgentId) {
-    return;
+    return false;
   }
 
+  const expectedUserText = String(options.expectedUserText || "").trim();
+  const retries = Number(options.retries || 0);
+  const retryDelayMs = Number(options.retryDelayMs || 180);
+
   try {
-    const [agentState, historyPayload] = await Promise.all([
+    const [agentState, historyPayload, interactionsPayload] = await Promise.all([
       fetchJSON(`/api/v1/agents/${encodeURIComponent(state.activeAgentId)}/state`),
       fetchJSON(`/api/v1/agents/${encodeURIComponent(state.activeAgentId)}/history`),
+      fetchJSON(`/api/v1/agents/${encodeURIComponent(state.activeAgentId)}/interactions`),
     ]);
     state.agentState = agentState;
     state.history = Array.isArray(historyPayload.history) ? historyPayload.history : [];
+    state.interactions = Array.isArray(interactionsPayload.interactions)
+      ? interactionsPayload.interactions
+      : [];
     const latestIntensity =
       state.history[0]?.intensity ?? computeIntensity(agentState?.current_emotion?.components || []);
     state.metrics.intensity = latestIntensity;
+
+    const interactionPersisted =
+      !expectedUserText ||
+      state.interactions.some((entry) => String(entry.user_text || "").trim() === expectedUserText);
+
+    if (!interactionPersisted && retries > 0) {
+      await sleep(retryDelayMs);
+      return refreshAgentData({
+        expectedUserText,
+        retries: retries - 1,
+        retryDelayMs,
+      });
+    }
+
+    if (!state.busy && interactionPersisted) {
+      state.transcript = [];
+    }
     render();
+    return interactionPersisted;
   } catch (error) {
     showToast(error.message || "Falha ao sincronizar o estado do agente.");
+    return false;
   }
 }
 
@@ -305,7 +333,16 @@ async function handleInteractionSubmit(event) {
 
   try {
     await streamInteraction(text, assistantMessage.id);
-    await refreshAgentData();
+    const persisted = await refreshAgentData({
+      expectedUserText: text,
+      retries: 8,
+      retryDelayMs: 220,
+    });
+    if (!persisted) {
+      showToast(
+        "Interacao concluida; a persistencia ainda nao apareceu na timeline e a versao local foi mantida."
+      );
+    }
     if (!findTranscriptByID(assistantMessage.id)?.text.trim()) {
       updateTranscript(assistantMessage.id, "Resposta concluida sem chunks de texto.");
     }
@@ -667,12 +704,14 @@ function renderHistory() {
 }
 
 function renderTranscript() {
-  if (!state.transcript.length) {
-    ui.transcriptList.innerHTML = `<div class="empty-state">A sessao corrente ainda nao tem mensagens. Envie um texto para abrir o fluxo do orquestrador.</div>`;
+  const entries = [...mapInteractionsToTranscript(state.interactions), ...state.transcript];
+
+  if (!entries.length) {
+    ui.transcriptList.innerHTML = `<div class="empty-state">Nenhuma conversa persistida ainda. Envie um texto para abrir o fluxo do orquestrador.</div>`;
     return;
   }
 
-  ui.transcriptList.innerHTML = state.transcript
+  ui.transcriptList.innerHTML = entries
     .map(
       (entry) => `
         <article class="transcript-item ${entry.role}">
@@ -681,6 +720,7 @@ function renderTranscript() {
             <small class="muted">${formatTimestamp(entry.createdAt)}</small>
           </div>
           <div class="transcript-body">${escapeHTML(entry.text || (entry.role === "assistant" ? "Aguardando chunks..." : ""))}</div>
+          ${renderTranscriptMeta(entry)}
         </article>
       `
     )
@@ -890,6 +930,59 @@ function escapeHTML(value) {
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
+}
+
+function sleep(delayMs) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, delayMs);
+  });
+}
+
+function mapInteractionsToTranscript(interactions) {
+  if (!Array.isArray(interactions)) {
+    return [];
+  }
+
+  return interactions.flatMap((interaction, index) => {
+    const baseCreatedAt = Number(interaction.created_at_ms || 0);
+    const fsmState = interaction.fsm_state?.state_name || "neutral";
+    const intensity = normalizeIntensity(interaction.intensity || 0);
+    const stimulus = interaction.stimulus || "novelty";
+
+    return [
+      {
+        id: `persisted-user-${index}-${baseCreatedAt}`,
+        role: "user",
+        text: interaction.user_text || "",
+        createdAt: baseCreatedAt,
+      },
+      {
+        id: `persisted-assistant-${index}-${baseCreatedAt}`,
+        role: "assistant",
+        text: interaction.response_text || "",
+        createdAt: baseCreatedAt + 1,
+        meta: [
+          `stimulus ${stimulus}`,
+          `fsm ${FSM_LABELS[fsmState] || humanizeAgentId(fsmState)}`,
+          `intensidade ${Math.round(intensity)}%`,
+        ],
+      },
+    ];
+  });
+}
+
+function renderTranscriptMeta(entry) {
+  if (!Array.isArray(entry.meta) || !entry.meta.length) {
+    return "";
+  }
+
+  return `
+    <div class="transcript-meta">
+      ${entry.meta
+        .map((item) => `<span class="transcript-badge">${escapeHTML(item)}</span>`)
+        .join("")}
+    </div>
+  `;
 }
 
 let toastTimer = null;

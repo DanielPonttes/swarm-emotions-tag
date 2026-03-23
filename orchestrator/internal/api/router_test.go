@@ -118,6 +118,21 @@ func TestInteractAndHistoryRoutes(t *testing.T) {
 	if historyRec.Code != http.StatusOK {
 		t.Fatalf("history expected 200, got %d", historyRec.Code)
 	}
+
+	interactionReq := httptest.NewRequest(http.MethodGet, "/api/v1/agents/agent-42/interactions", nil)
+	interactionRec := httptest.NewRecorder()
+	router.ServeHTTP(interactionRec, interactionReq)
+	if interactionRec.Code != http.StatusOK {
+		t.Fatalf("interactions expected 200, got %d", interactionRec.Code)
+	}
+
+	var interactionPayload map[string][]map[string]any
+	if err := json.Unmarshal(interactionRec.Body.Bytes(), &interactionPayload); err != nil {
+		t.Fatalf("decode interactions response: %v", err)
+	}
+	if len(interactionPayload["interactions"]) == 0 {
+		t.Fatalf("expected persisted interactions for agent-42")
+	}
 }
 
 func TestInteractStreamRoute(t *testing.T) {

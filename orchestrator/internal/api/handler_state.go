@@ -29,3 +29,13 @@ func (h *Handlers) GetEmotionHistory(w http.ResponseWriter, r *http.Request) {
 	}
 	respondJSON(w, http.StatusOK, map[string]any{"history": history})
 }
+
+func (h *Handlers) GetInteractionLogs(w http.ResponseWriter, r *http.Request) {
+	agentID := chi.URLParam(r, "agentID")
+	logs, err := h.db.GetInteractionLogs(r.Context(), agentID)
+	if err != nil {
+		respondError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]any{"interactions": logs})
+}

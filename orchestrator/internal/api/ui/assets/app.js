@@ -1,76 +1,30 @@
+// ── Configuration ───────────────────────────────────────────────────────────
 const MAX_INTENSITY = Math.sqrt(6);
 const DEFAULT_AGENT_ID = "sentient-console";
+
+// ── Emotion Model (6 dimensions from backend) ──────────────────────────────
 const DIMENSIONS = [
-  {
-    index: 0,
-    label: "Valencia",
-    positive: "positivo",
-    negative: "negativo",
-    explanation: "Polaridade afetiva do texto.",
-  },
-  {
-    index: 1,
-    label: "Arousal",
-    positive: "ativado",
-    negative: "sereno",
-    explanation: "Nivel de ativacao fisiologica percebida.",
-  },
-  {
-    index: 2,
-    label: "Dominancia",
-    positive: "agencia",
-    negative: "pressao",
-    explanation: "Sensacao de controle sobre o contexto.",
-  },
-  {
-    index: 3,
-    label: "Certeza",
-    positive: "clareza",
-    negative: "ambiguidade",
-    explanation: "Confianca na interpretacao corrente.",
-  },
-  {
-    index: 4,
-    label: "Social",
-    positive: "proximidade",
-    negative: "distancia",
-    explanation: "Carga relacional e empatica do texto.",
-  },
-  {
-    index: 5,
-    label: "Novidade",
-    positive: "exploracao",
-    negative: "estabilidade",
-    explanation: "Nivel de surpresa ou descoberta.",
-  },
+  { index: 0, label: "Valencia",   positive: "positivo",   negative: "negativo",     explanation: "Polaridade afetiva do texto." },
+  { index: 1, label: "Arousal",    positive: "ativado",    negative: "sereno",        explanation: "Nivel de ativacao fisiologica percebida." },
+  { index: 2, label: "Dominancia", positive: "agencia",    negative: "pressao",       explanation: "Sensacao de controle sobre o contexto." },
+  { index: 3, label: "Certeza",    positive: "clareza",    negative: "ambiguidade",   explanation: "Confianca na interpretacao corrente." },
+  { index: 4, label: "Social",     positive: "proximidade",negative: "distancia",     explanation: "Carga relacional e empatica do texto." },
+  { index: 5, label: "Novidade",   positive: "exploracao", negative: "estabilidade",  explanation: "Nivel de surpresa ou descoberta." },
 ];
 
 const FSM_LABELS = {
-  neutral: "Neutral",
-  joyful: "Joyful",
-  curious: "Curious",
-  empathetic: "Empathetic",
-  calm: "Calm",
-  worried: "Worried",
-  frustrated: "Frustrated",
-  anxious: "Anxious",
+  neutral: "Neutral", joyful: "Joyful", curious: "Curious", empathetic: "Empathetic",
+  calm: "Calm", worried: "Worried", frustrated: "Frustrated", anxious: "Anxious",
 };
 
 const MACRO_LABELS = {
-  positive: "Macroestado positivo",
-  neutral: "Macroestado neutro",
-  negative: "Macroestado negativo",
+  positive: "Macroestado positivo", neutral: "Macroestado neutro", negative: "Macroestado negativo",
 };
 
 const MACRO_BY_STATE = {
-  joyful: "positive",
-  curious: "positive",
-  empathetic: "positive",
-  neutral: "neutral",
-  calm: "neutral",
-  worried: "negative",
-  frustrated: "negative",
-  anxious: "negative",
+  joyful: "positive", curious: "positive", empathetic: "positive",
+  neutral: "neutral", calm: "neutral",
+  worried: "negative", frustrated: "negative", anxious: "negative",
 };
 
 const SUGGESTIONS = [
@@ -80,6 +34,7 @@ const SUGGESTIONS = [
   "Estou curioso sobre qual tom usar numa conversa dificil.",
 ];
 
+// ── Application State ───────────────────────────────────────────────────────
 const state = {
   agents: [],
   activeAgentId: "",
@@ -87,58 +42,50 @@ const state = {
   interactions: [],
   agentState: null,
   transcript: [],
-  ready: {
-    status: "checking",
-    detail: "Verificando disponibilidade do backend.",
-  },
-  metrics: {
-    intensity: 0,
-    latencyMs: null,
-    traceId: "",
-  },
+  ready: { status: "checking", detail: "Verificando disponibilidade do backend." },
+  metrics: { intensity: 0, latencyMs: null, traceId: "" },
   busy: false,
 };
 
+// ── DOM References ──────────────────────────────────────────────────────────
 const ui = {
-  readyDot: document.querySelector("#ready-dot"),
-  readyStatus: document.querySelector("#ready-status"),
-  readyDetail: document.querySelector("#ready-detail"),
-  agentSelect: document.querySelector("#agent-select"),
-  refreshButton: document.querySelector("#refresh-button"),
-  syncButton: document.querySelector("#sync-button"),
-  createAgentForm: document.querySelector("#create-agent-form"),
-  agentName: document.querySelector("#agent-name"),
-  agentId: document.querySelector("#agent-id"),
-  interactionForm: document.querySelector("#interaction-form"),
-  textInput: document.querySelector("#text-input"),
-  submitButton: document.querySelector("#submit-button"),
-  streamStatus: document.querySelector("#stream-status"),
-  suggestionRow: document.querySelector("#suggestion-row"),
-  fsmState: document.querySelector("#fsm-state"),
-  macroState: document.querySelector("#macro-state"),
-  latencyValue: document.querySelector("#latency-value"),
-  traceId: document.querySelector("#trace-id"),
-  gauge: document.querySelector("#intensity-gauge"),
-  intensityValue: document.querySelector("#intensity-value"),
-  intensityCopy: document.querySelector("#intensity-copy"),
-  dominantAxis: document.querySelector("#dominant-axis"),
-  dominantAxisCopy: document.querySelector("#dominant-axis-copy"),
-  socialSignal: document.querySelector("#social-signal"),
-  socialSignalCopy: document.querySelector("#social-signal-copy"),
-  noveltySignal: document.querySelector("#novelty-signal"),
-  noveltySignalCopy: document.querySelector("#novelty-signal-copy"),
-  toneChipCloud: document.querySelector("#tone-chip-cloud"),
-  vectorMap: document.querySelector("#vector-map"),
-  dimensionBars: document.querySelector("#dimension-bars"),
-  historySparkline: document.querySelector("#history-sparkline"),
-  historyList: document.querySelector("#history-list"),
-  transcriptList: document.querySelector("#transcript-list"),
-  toast: document.querySelector("#toast"),
+  readyDot:          document.getElementById("ready-dot"),
+  readyLabel:        document.getElementById("ready-label"),
+  agentSelect:       document.getElementById("agent-select"),
+  refreshBtn:        document.getElementById("refresh-btn"),
+  createAgentForm:   document.getElementById("create-agent-form"),
+  agentNameInput:    document.getElementById("agent-name-input"),
+  agentIdInput:      document.getElementById("agent-id-input"),
+  interactionForm:   document.getElementById("interaction-form"),
+  textInput:         document.getElementById("text-input"),
+  submitBtn:         document.getElementById("submit-btn"),
+  streamStatus:      document.getElementById("stream-status"),
+  suggestionRow:     document.getElementById("suggestion-row"),
+  fsmState:          document.getElementById("fsm-state"),
+  macroState:        document.getElementById("macro-state"),
+  latencyValue:      document.getElementById("latency-value"),
+  traceId:           document.getElementById("trace-id"),
+  gauge:             document.getElementById("intensity-gauge"),
+  intensityValue:    document.getElementById("intensity-value"),
+  intensityCopy:     document.getElementById("intensity-copy"),
+  dominantAxis:      document.getElementById("dominant-axis"),
+  dominantAxisCopy:  document.getElementById("dominant-axis-copy"),
+  socialSignal:      document.getElementById("social-signal"),
+  socialSignalCopy:  document.getElementById("social-signal-copy"),
+  noveltySignal:     document.getElementById("novelty-signal"),
+  noveltySignalCopy: document.getElementById("novelty-signal-copy"),
+  toneChipCloud:     document.getElementById("tone-chip-cloud"),
+  fsmContext:        document.getElementById("fsm-context"),
+  vectorMap:         document.getElementById("vector-map"),
+  dimensionBars:     document.getElementById("dimension-bars"),
+  historySparkline:  document.getElementById("history-sparkline"),
+  historyList:       document.getElementById("history-list"),
+  transcriptList:    document.getElementById("transcript-list"),
+  toast:             document.getElementById("toast"),
 };
 
-boot().catch((error) => {
-  showToast(error.message || "Falha ao inicializar a interface.");
-});
+// ── Boot ────────────────────────────────────────────────────────────────────
+boot().catch((err) => showToast(err.message || "Falha ao inicializar."));
 
 async function boot() {
   renderSuggestionButtons();
@@ -148,50 +95,63 @@ async function boot() {
 }
 
 function bindEvents() {
-  ui.refreshButton.addEventListener("click", () => refreshAgentData());
-  ui.syncButton.addEventListener("click", () => refreshAgentData());
-  ui.agentSelect.addEventListener("change", async (event) => {
-    await setActiveAgent(event.target.value);
-  });
+  ui.refreshBtn.addEventListener("click", () => refreshAgentData());
+  ui.agentSelect.addEventListener("change", (e) => setActiveAgent(e.target.value));
   ui.createAgentForm.addEventListener("submit", handleCreateAgent);
   ui.interactionForm.addEventListener("submit", handleInteractionSubmit);
-  ui.agentName.addEventListener("input", () => {
-    if (!ui.agentId.value.trim()) {
-      ui.agentId.value = slugify(ui.agentName.value);
+  ui.agentNameInput.addEventListener("input", () => {
+    if (!ui.agentIdInput.value.trim()) {
+      ui.agentIdInput.value = slugify(ui.agentNameInput.value);
     }
   });
 }
 
 function renderSuggestionButtons() {
   ui.suggestionRow.innerHTML = "";
-  for (const suggestion of SUGGESTIONS) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "suggestion-button";
-    button.textContent = suggestion;
-    button.addEventListener("click", () => {
-      ui.textInput.value = suggestion;
+  for (const s of SUGGESTIONS) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "suggestion-button";
+    btn.textContent = s;
+    btn.addEventListener("click", () => {
+      ui.textInput.value = s;
       ui.textInput.focus();
     });
-    ui.suggestionRow.appendChild(button);
+    ui.suggestionRow.appendChild(btn);
   }
 }
 
+// ── API Layer ───────────────────────────────────────────────────────────────
+async function fetchJSON(url, options = {}) {
+  const response = await fetch(url, {
+    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    ...options,
+  });
+  if (!response.ok) throw new Error(await extractError(response));
+  return response.json();
+}
+
+async function extractError(response) {
+  try {
+    const payload = await response.json();
+    return payload.error || payload.message || `${response.status} ${response.statusText}`;
+  } catch {
+    return `${response.status} ${response.statusText}`;
+  }
+}
+
+// ── Data Loading ────────────────────────────────────────────────────────────
 async function loadReadyStatus() {
   try {
     const payload = await fetchJSON("/ready");
     state.ready = {
       status: payload.status === "ready" ? "ready" : "error",
-      detail:
-        payload.status === "ready"
-          ? "Dependencias prontas para processar interacoes."
-          : payload.error || "Backend ainda nao esta pronto.",
+      detail: payload.status === "ready"
+        ? "Dependencias prontas para processar interacoes."
+        : (payload.error || "Backend ainda nao esta pronto."),
     };
-  } catch (error) {
-    state.ready = {
-      status: "error",
-      detail: error.message || "Nao foi possivel consultar /ready.",
-    };
+  } catch (err) {
+    state.ready = { status: "error", detail: err.message || "Nao foi possivel consultar /ready." };
   }
   renderReadyStatus();
 }
@@ -199,133 +159,90 @@ async function loadReadyStatus() {
 async function loadAgents() {
   const payload = await fetchJSON("/api/v1/agents/");
   state.agents = Array.isArray(payload.agents) ? payload.agents : [];
-
   if (!state.agents.length) {
     await createAgent(DEFAULT_AGENT_ID, "Sentient Console");
     return loadAgents();
   }
-
-  const storedAgent = window.localStorage.getItem("swarm-active-agent");
-  const nextAgent = state.agents.some((agent) => agent.agent_id === storedAgent)
-    ? storedAgent
-    : state.agents[0].agent_id;
-
-  await setActiveAgent(nextAgent, { persist: false });
+  const stored = window.localStorage.getItem("swarm-active-agent");
+  const next = state.agents.some((a) => a.agent_id === stored) ? stored : state.agents[0].agent_id;
+  await setActiveAgent(next, { persist: false });
 }
 
 async function setActiveAgent(agentID, options = {}) {
-  if (!agentID) {
-    return;
-  }
-
+  if (!agentID) return;
   state.activeAgentId = agentID;
-  if (options.persist !== false) {
-    window.localStorage.setItem("swarm-active-agent", agentID);
-  }
+  if (options.persist !== false) window.localStorage.setItem("swarm-active-agent", agentID);
   renderAgentOptions();
   await refreshAgentData();
 }
 
 async function refreshAgentData(options = {}) {
-  if (!state.activeAgentId) {
-    return false;
-  }
-
-  const expectedUserText = String(options.expectedUserText || "").trim();
+  if (!state.activeAgentId) return false;
+  const expectedText = String(options.expectedUserText || "").trim();
   const retries = Number(options.retries || 0);
-  const retryDelayMs = Number(options.retryDelayMs || 180);
+  const delay = Number(options.retryDelayMs || 180);
 
   try {
+    const id = encodeURIComponent(state.activeAgentId);
     const [agentState, historyPayload, interactionsPayload] = await Promise.all([
-      fetchJSON(`/api/v1/agents/${encodeURIComponent(state.activeAgentId)}/state`),
-      fetchJSON(`/api/v1/agents/${encodeURIComponent(state.activeAgentId)}/history`),
-      fetchJSON(`/api/v1/agents/${encodeURIComponent(state.activeAgentId)}/interactions`),
+      fetchJSON(`/api/v1/agents/${id}/state`),
+      fetchJSON(`/api/v1/agents/${id}/history`),
+      fetchJSON(`/api/v1/agents/${id}/interactions`),
     ]);
     state.agentState = agentState;
     state.history = Array.isArray(historyPayload.history) ? historyPayload.history : [];
-    state.interactions = Array.isArray(interactionsPayload.interactions)
-      ? interactionsPayload.interactions
-      : [];
-    const latestIntensity =
-      state.history[0]?.intensity ?? computeIntensity(agentState?.current_emotion?.components || []);
-    state.metrics.intensity = latestIntensity;
+    state.interactions = Array.isArray(interactionsPayload.interactions) ? interactionsPayload.interactions : [];
+    state.metrics.intensity = state.history[0]?.intensity ?? computeIntensity(agentState?.current_emotion?.components || []);
 
-    const interactionPersisted =
-      !expectedUserText ||
-      state.interactions.some((entry) => String(entry.user_text || "").trim() === expectedUserText);
-
-    if (!interactionPersisted && retries > 0) {
-      await sleep(retryDelayMs);
-      return refreshAgentData({
-        expectedUserText,
-        retries: retries - 1,
-        retryDelayMs,
-      });
+    const persisted = !expectedText || state.interactions.some((e) => String(e.user_text || "").trim() === expectedText);
+    if (!persisted && retries > 0) {
+      await sleep(delay);
+      return refreshAgentData({ expectedUserText: expectedText, retries: retries - 1, retryDelayMs: delay });
     }
-
-    if (!state.busy && interactionPersisted) {
-      state.transcript = [];
-    }
+    if (!state.busy && persisted) state.transcript = [];
     render();
-    return interactionPersisted;
-  } catch (error) {
-    showToast(error.message || "Falha ao sincronizar o estado do agente.");
+    return persisted;
+  } catch (err) {
+    showToast(err.message || "Falha ao sincronizar o estado do agente.");
     return false;
   }
 }
 
 async function handleCreateAgent(event) {
   event.preventDefault();
-  const displayName = ui.agentName.value.trim();
-  const rawAgentId = ui.agentId.value.trim() || displayName || DEFAULT_AGENT_ID;
-  const agentID = slugify(rawAgentId) || DEFAULT_AGENT_ID;
-
+  const displayName = ui.agentNameInput.value.trim();
+  const rawId = ui.agentIdInput.value.trim() || displayName || DEFAULT_AGENT_ID;
+  const agentID = slugify(rawId) || DEFAULT_AGENT_ID;
   try {
-    await createAgent(agentID, displayName || humanizeAgentId(agentID));
+    await createAgent(agentID, displayName || humanize(agentID));
     ui.createAgentForm.reset();
     await loadAgents();
     await setActiveAgent(agentID);
     showToast(`Agente ${agentID} pronto para uso.`, "success");
-  } catch (error) {
-    showToast(error.message || "Nao foi possivel criar o agente.");
+  } catch (err) {
+    showToast(err.message || "Nao foi possivel criar o agente.");
   }
 }
 
 async function createAgent(agentID, displayName) {
   await fetchJSON("/api/v1/agents/", {
     method: "POST",
-    body: JSON.stringify({
-      agent_id: agentID,
-      display_name: displayName,
-    }),
+    body: JSON.stringify({ agent_id: agentID, display_name: displayName }),
   });
 }
 
+// ── Interaction (Streaming) ─────────────────────────────────────────────────
 async function handleInteractionSubmit(event) {
   event.preventDefault();
   const text = ui.textInput.value.trim();
-  if (!text || state.busy) {
-    return;
-  }
-
+  if (!text || state.busy) return;
   if (!state.activeAgentId) {
     showToast("Crie ou selecione um agente antes de enviar o texto.");
     return;
   }
 
-  const userMessage = {
-    id: crypto.randomUUID(),
-    role: "user",
-    text,
-    createdAt: Date.now(),
-  };
-  const assistantMessage = {
-    id: crypto.randomUUID(),
-    role: "assistant",
-    text: "",
-    createdAt: Date.now(),
-  };
-
+  const userMessage = { id: crypto.randomUUID(), role: "user", text, createdAt: Date.now() };
+  const assistantMessage = { id: crypto.randomUUID(), role: "assistant", text: "", createdAt: Date.now() };
   state.transcript.push(userMessage, assistantMessage);
   ui.textInput.value = "";
   setBusy(true, "Processando via /api/v1/interact/stream ...");
@@ -333,25 +250,16 @@ async function handleInteractionSubmit(event) {
 
   try {
     await streamInteraction(text, assistantMessage.id);
-    const persisted = await refreshAgentData({
-      expectedUserText: text,
-      retries: 8,
-      retryDelayMs: 220,
-    });
+    const persisted = await refreshAgentData({ expectedUserText: text, retries: 8, retryDelayMs: 220 });
     if (!persisted) {
-      showToast(
-        "Interacao concluida; a persistencia ainda nao apareceu na timeline e a versao local foi mantida."
-      );
+      showToast("Interacao concluida; a persistencia ainda nao apareceu na timeline.");
     }
-    if (!findTranscriptByID(assistantMessage.id)?.text.trim()) {
+    if (!findTranscript(assistantMessage.id)?.text.trim()) {
       updateTranscript(assistantMessage.id, "Resposta concluida sem chunks de texto.");
     }
-  } catch (error) {
-    updateTranscript(
-      assistantMessage.id,
-      `Falha ao processar a interacao: ${error.message || "erro desconhecido"}`
-    );
-    showToast(error.message || "Falha ao processar a interacao.");
+  } catch (err) {
+    updateTranscript(assistantMessage.id, `Falha ao processar a interacao: ${err.message || "erro desconhecido"}`);
+    showToast(err.message || "Falha ao processar a interacao.");
   } finally {
     setBusy(false, "Streaming encerrado.");
     render();
@@ -361,27 +269,19 @@ async function handleInteractionSubmit(event) {
 async function streamInteraction(text, assistantMessageID) {
   const response = await fetch("/api/v1/interact/stream", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      agent_id: state.activeAgentId,
-      text,
-    }),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ agent_id: state.activeAgentId, text }),
   });
-
-  if (!response.ok) {
-    throw new Error(await extractErrorMessage(response));
-  }
+  if (!response.ok) throw new Error(await extractError(response));
 
   const contentType = response.headers.get("content-type") || "";
   if (!contentType.includes("text/event-stream") || !response.body) {
     const payload = await response.json();
-    handleFallbackInteractionPayload(payload, assistantMessageID);
+    handleFallback(payload, assistantMessageID);
     return;
   }
 
-  await parseEventStream(response.body, {
+  await parseSSE(response.body, {
     metadata(payload) {
       state.metrics.traceId = payload.trace_id || state.metrics.traceId;
       state.metrics.intensity = Number(payload.intensity || 0);
@@ -390,7 +290,7 @@ async function streamInteraction(text, assistantMessageID) {
         current_emotion: payload.emotion || state.agentState?.current_emotion || { components: [] },
         current_fsm_state: {
           state_name: payload.fsm_state || state.agentState?.current_fsm_state?.state_name || "neutral",
-          macro_state: macroForState(payload.fsm_state || "neutral"),
+          macro_state: macroFor(payload.fsm_state || "neutral"),
           entered_at_ms: Date.now(),
         },
         updated_at_ms: Date.now(),
@@ -398,7 +298,7 @@ async function streamInteraction(text, assistantMessageID) {
       render();
     },
     chunk(payload) {
-      const previous = findTranscriptByID(assistantMessageID)?.text || "";
+      const previous = findTranscript(assistantMessageID)?.text || "";
       updateTranscript(assistantMessageID, previous + String(payload.text || ""));
       renderTranscript();
     },
@@ -412,7 +312,7 @@ async function streamInteraction(text, assistantMessageID) {
   });
 }
 
-async function parseEventStream(stream, handlers) {
+async function parseSSE(stream, handlers) {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -422,15 +322,13 @@ async function parseEventStream(stream, handlers) {
   while (true) {
     const { value, done } = await reader.read();
     buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-
-    let lineBreakIndex = buffer.indexOf("\n");
-    while (lineBreakIndex >= 0) {
-      const rawLine = buffer.slice(0, lineBreakIndex);
-      buffer = buffer.slice(lineBreakIndex + 1);
-      const line = rawLine.replace(/\r$/, "");
-
+    let idx = buffer.indexOf("\n");
+    while (idx >= 0) {
+      const raw = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 1);
+      const line = raw.replace(/\r$/, "");
       if (line === "") {
-        await dispatchSSEEvent(currentEvent, dataLines, handlers);
+        await dispatchSSE(currentEvent, dataLines, handlers);
         currentEvent = "message";
         dataLines = [];
       } else if (line.startsWith("event:")) {
@@ -438,33 +336,24 @@ async function parseEventStream(stream, handlers) {
       } else if (line.startsWith("data:")) {
         dataLines.push(line.slice("data:".length).trim());
       }
-
-      lineBreakIndex = buffer.indexOf("\n");
+      idx = buffer.indexOf("\n");
     }
-
     if (done) {
-      if (dataLines.length) {
-        await dispatchSSEEvent(currentEvent, dataLines, handlers);
-      }
+      if (dataLines.length) await dispatchSSE(currentEvent, dataLines, handlers);
       return;
     }
   }
 }
 
-async function dispatchSSEEvent(eventName, dataLines, handlers) {
-  if (!dataLines.length) {
-    return;
-  }
+async function dispatchSSE(eventName, dataLines, handlers) {
+  if (!dataLines.length) return;
   const payload = JSON.parse(dataLines.join("\n"));
   const handler = handlers[eventName];
-  if (typeof handler === "function") {
-    await handler(payload);
-  }
+  if (typeof handler === "function") await handler(payload);
 }
 
-function handleFallbackInteractionPayload(payload, assistantMessageID) {
-  const responseText = String(payload.response || "");
-  updateTranscript(assistantMessageID, responseText || "Resposta recebida sem corpo.");
+function handleFallback(payload, assistantMessageID) {
+  updateTranscript(assistantMessageID, String(payload.response || "Resposta recebida sem corpo."));
   state.metrics.traceId = payload.trace_id || "";
   state.metrics.latencyMs = Number(payload.latency_ms || 0);
   state.metrics.intensity = Number(payload.intensity || 0);
@@ -473,7 +362,7 @@ function handleFallbackInteractionPayload(payload, assistantMessageID) {
     current_emotion: payload.emotion_state || { components: [] },
     current_fsm_state: {
       state_name: payload.fsm_state || "neutral",
-      macro_state: macroForState(payload.fsm_state || "neutral"),
+      macro_state: macroFor(payload.fsm_state || "neutral"),
       entered_at_ms: Date.now(),
     },
     updated_at_ms: Date.now(),
@@ -481,11 +370,13 @@ function handleFallbackInteractionPayload(payload, assistantMessageID) {
   render();
 }
 
+// ── Render Pipeline ─────────────────────────────────────────────────────────
 function render() {
   renderReadyStatus();
   renderAgentOptions();
   renderHeaderMetrics();
   renderSummary();
+  renderFSMContext();
   renderDimensionBars();
   renderVectorMap();
   renderHistory();
@@ -493,43 +384,35 @@ function render() {
 }
 
 function renderReadyStatus() {
-  ui.readyStatus.textContent =
-    state.ready.status === "ready" ? "Servicos prontos" : state.ready.status === "error" ? "Atencao no backend" : "Checando servicos";
-  ui.readyDetail.textContent = state.ready.detail;
+  const s = state.ready.status;
+  ui.readyLabel.textContent = s === "ready" ? "Online" : s === "error" ? "Offline" : "Checando";
   ui.readyDot.className = "status-dot";
-  if (state.ready.status === "ready") {
-    ui.readyDot.classList.add("ready");
-  } else if (state.ready.status === "error") {
-    ui.readyDot.classList.add("error");
-  }
+  if (s === "ready") ui.readyDot.classList.add("ready");
+  else if (s === "error") ui.readyDot.classList.add("error");
 }
 
 function renderAgentOptions() {
   const previousValue = ui.agentSelect.value;
   ui.agentSelect.innerHTML = "";
-
   for (const agent of state.agents) {
     const option = document.createElement("option");
     option.value = agent.agent_id;
-    option.textContent = `${agent.display_name || humanizeAgentId(agent.agent_id)} (${agent.agent_id})`;
+    option.textContent = `${agent.display_name || humanize(agent.agent_id)} (${agent.agent_id})`;
     ui.agentSelect.appendChild(option);
   }
-
   ui.agentSelect.value = state.activeAgentId || previousValue || "";
 }
 
 function renderHeaderMetrics() {
   const fsmState = state.agentState?.current_fsm_state?.state_name || "neutral";
-  const macroState = state.agentState?.current_fsm_state?.macro_state || macroForState(fsmState);
-  ui.fsmState.textContent = FSM_LABELS[fsmState] || humanizeAgentId(fsmState);
+  const macroState = state.agentState?.current_fsm_state?.macro_state || macroFor(fsmState);
+  ui.fsmState.textContent = FSM_LABELS[fsmState] || humanize(fsmState);
   ui.macroState.textContent = MACRO_LABELS[macroState] || `Macroestado ${macroState}`;
   ui.latencyValue.textContent =
     typeof state.metrics.latencyMs === "number" && state.metrics.latencyMs > 0
       ? `${Math.round(state.metrics.latencyMs)} ms`
       : "--";
-  ui.traceId.textContent = state.metrics.traceId
-    ? `trace ${state.metrics.traceId}`
-    : "trace indisponivel";
+  ui.traceId.textContent = state.metrics.traceId ? `trace ${state.metrics.traceId}` : "trace indisponivel";
 
   const normalizedIntensity = normalizeIntensity(state.metrics.intensity);
   ui.gauge.style.setProperty("--score", String(normalizedIntensity));
@@ -562,7 +445,7 @@ function renderSummary() {
   ui.noveltySignalCopy.textContent = novelty.detail;
 
   ui.toneChipCloud.innerHTML = "";
-  const chips = buildToneChips(vector, dominant);
+  const chips = buildToneChips(vector, dominant[0]);
   for (const chipText of chips) {
     const chip = document.createElement("span");
     chip.className = "tone-chip";
@@ -571,12 +454,33 @@ function renderSummary() {
   }
 }
 
+function renderFSMContext() {
+  const fsmState = state.agentState?.current_fsm_state?.state_name || "neutral";
+  const macro = macroFor(fsmState);
+  const macroClass = macro === "positive" ? "fsm-positive" : macro === "negative" ? "fsm-negative" : "";
+
+  ui.fsmContext.innerHTML = `
+    <div class="fsm-row">
+      <span class="fsm-label">Estado FSM</span>
+      <span class="fsm-value">${FSM_LABELS[fsmState] || humanize(fsmState)}</span>
+    </div>
+    <div class="fsm-row">
+      <span class="fsm-label">Macro</span>
+      <span class="fsm-value ${macroClass}">${MACRO_LABELS[macro] || macro}</span>
+    </div>
+    <div class="fsm-row">
+      <span class="fsm-label">Intensidade</span>
+      <span class="fsm-value">${Math.round(normalizeIntensity(state.metrics.intensity))}%</span>
+    </div>
+  `;
+}
+
 function renderDimensionBars() {
   const vector = currentVector();
   ui.dimensionBars.innerHTML = "";
 
-  for (const dimension of DIMENSIONS) {
-    const value = clamp(vector[dimension.index] || 0, -1, 1);
+  for (const dim of DIMENSIONS) {
+    const value = clamp(vector[dim.index] || 0, -1, 1);
     const row = document.createElement("div");
     row.className = "dimension-row";
 
@@ -584,10 +488,10 @@ function renderDimensionBars() {
     head.className = "dimension-head";
     head.innerHTML = `
       <div>
-        <div class="dimension-name">${dimension.label}</div>
-        <small>${dimension.explanation}</small>
+        <span class="dimension-name">${dim.label}</span>
+        <span class="dimension-explanation">${dim.explanation}</span>
       </div>
-      <strong>${value.toFixed(2)}</strong>
+      <span class="${value >= 0 ? "dimension-val-positive" : "dimension-val-negative"}">${value.toFixed(2)}</span>
     `;
 
     const track = document.createElement("div");
@@ -607,17 +511,17 @@ function renderDimensionBars() {
 function renderVectorMap() {
   const vector = currentVector();
   const width = 680;
-  const height = 360;
+  const height = 380;
   const centerX = width / 2;
   const centerY = height / 2;
   const angles = [-160, -100, -35, 20, 95, 160];
 
-  const points = DIMENSIONS.map((dimension, idx) => {
+  const points = DIMENSIONS.map((dim, idx) => {
     const value = clamp(vector[idx] || 0, -1, 1);
     const radius = 90 + Math.abs(value) * 70;
     const angle = (angles[idx] * Math.PI) / 180;
     return {
-      dimension,
+      dim,
       value,
       x: centerX + Math.cos(angle) * radius,
       y: centerY + Math.sin(angle) * radius,
@@ -627,6 +531,7 @@ function renderVectorMap() {
   const path = buildSmoothPath(points);
   const dominant = topDimensions(vector, 1)[0];
   const macroState = state.agentState?.current_fsm_state?.macro_state || "neutral";
+  const fsmState = state.agentState?.current_fsm_state?.state_name || "neutral";
 
   ui.vectorMap.innerHTML = `
     <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Mapa vetorial das seis dimensoes emocionais">
@@ -636,12 +541,7 @@ function renderVectorMap() {
           <stop offset="50%" stop-color="#b28cff" />
           <stop offset="100%" stop-color="#ff8ab1" />
         </linearGradient>
-        <radialGradient id="coreGlow" cx="50%" cy="50%" r="55%">
-          <stop offset="0%" stop-color="rgba(178,140,255,0.9)" />
-          <stop offset="100%" stop-color="rgba(178,140,255,0)" />
-        </radialGradient>
       </defs>
-      <rect width="${width}" height="${height}" fill="transparent"></rect>
       <circle cx="${centerX}" cy="${centerY}" fill="none" r="52" stroke="rgba(151,166,209,0.18)" />
       <circle cx="${centerX}" cy="${centerY}" fill="none" r="112" stroke="rgba(151,166,209,0.12)" />
       <circle cx="${centerX}" cy="${centerY}" fill="none" r="172" stroke="rgba(151,166,209,0.08)" />
@@ -649,15 +549,15 @@ function renderVectorMap() {
       ${points
         .map(
           (point) => `
-            <line x1="${centerX}" y1="${centerY}" x2="${point.x}" y2="${point.y}" stroke="rgba(151,166,209,0.12)" />
-            <circle cx="${point.x}" cy="${point.y}" r="${8 + Math.abs(point.value) * 10}" fill="${point.value >= 0 ? "#b28cff" : "#ff8ab1"}" fill-opacity="${0.45 + Math.abs(point.value) * 0.4}" />
-            <text x="${point.x}" y="${point.y - 16}" fill="#eef2ff" font-size="12" font-family="Space Grotesk" text-anchor="middle">${point.dimension.label}</text>
-            <text x="${point.x}" y="${point.y + 22}" fill="#97a6d1" font-size="11" font-family="Space Grotesk" text-anchor="middle">${point.value.toFixed(2)}</text>
+            <line x1="${centerX}" y1="${centerY}" x2="${point.x.toFixed(1)}" y2="${point.y.toFixed(1)}" stroke="rgba(151,166,209,0.12)" />
+            <circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="${(8 + Math.abs(point.value) * 10).toFixed(1)}" fill="${point.value >= 0 ? "#b28cff" : "#ff8ab1"}" fill-opacity="${(0.45 + Math.abs(point.value) * 0.4).toFixed(2)}" />
+            <text x="${point.x.toFixed(1)}" y="${(point.y - 16).toFixed(1)}" fill="#eef2ff" font-size="12" font-family="Space Grotesk" text-anchor="middle">${point.dim.label}</text>
+            <text x="${point.x.toFixed(1)}" y="${(point.y + 22).toFixed(1)}" fill="#97a6d1" font-size="11" font-family="Space Grotesk" text-anchor="middle">${point.value.toFixed(2)}</text>
           `
         )
         .join("")}
       <circle cx="${centerX}" cy="${centerY}" r="48" fill="rgba(17,33,70,0.88)" stroke="rgba(178,140,255,0.24)" />
-      <text x="${centerX}" y="${centerY - 8}" fill="#eef2ff" font-size="22" font-family="Epilogue" font-weight="700" text-anchor="middle">${FSM_LABELS[state.agentState?.current_fsm_state?.state_name] || "Neutral"}</text>
+      <text x="${centerX}" y="${centerY - 8}" fill="#eef2ff" font-size="22" font-family="Epilogue" font-weight="700" text-anchor="middle">${FSM_LABELS[fsmState] || "Neutral"}</text>
       <text x="${centerX}" y="${centerY + 18}" fill="#97a6d1" font-size="12" font-family="Space Grotesk" text-anchor="middle">${MACRO_LABELS[macroState] || "Macroestado neutro"}</text>
       <text x="28" y="${height - 28}" fill="#97a6d1" font-size="12" font-family="Space Grotesk">Dominante: ${dominant ? dominant.label : "--"}</text>
     </svg>
@@ -678,9 +578,9 @@ function renderHistory() {
       const vector = entry.emotion?.components || [];
       const dominant = topDimensions(vector, 1)[0];
       return `
-        <article class="history-item">
+        <article class="history-item fade-in">
           <div class="history-topline">
-            <div class="history-state">${FSM_LABELS[entry.fsm_state?.state_name] || "Neutral"}</div>
+            <span class="history-state">${FSM_LABELS[entry.fsm_state?.state_name] || "Neutral"}</span>
             <small class="muted">${timestamp}</small>
           </div>
           <div class="history-metrics">
@@ -714,7 +614,7 @@ function renderTranscript() {
   ui.transcriptList.innerHTML = entries
     .map(
       (entry) => `
-        <article class="transcript-item ${entry.role}">
+        <article class="transcript-item ${entry.role} fade-in">
           <div class="transcript-topline">
             <span class="transcript-role">${entry.role === "user" ? "Usuario" : "Orchestrator"}</span>
             <small class="muted">${formatTimestamp(entry.createdAt)}</small>
@@ -727,27 +627,25 @@ function renderTranscript() {
     .join("");
 }
 
+// ── Helpers ─────────────────────────────────────────────────────────────────
 function currentVector() {
   const components = state.agentState?.current_emotion?.components;
   return Array.isArray(components) ? components : [0, 0, 0, 0.5, 0, 0];
 }
 
 function topDimensions(vector, count) {
-  return DIMENSIONS.map((dimension) => ({
-    ...dimension,
-    value: clamp(vector[dimension.index] || 0, -1, 1),
+  return DIMENSIONS.map((dim) => ({
+    ...dim,
+    value: clamp(vector[dim.index] || 0, -1, 1),
   }))
-    .sort((left, right) => Math.abs(right.value) - Math.abs(left.value))
+    .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
     .slice(0, count);
 }
 
 function signedDescriptor(value, dimension) {
   const score = clamp(value || 0, -1, 1);
   if (Math.abs(score) < 0.12) {
-    return {
-      label: "Balanceado",
-      detail: `${dimension.label} esta perto do centro.`,
-    };
+    return { label: "Balanceado", detail: `${dimension.label} esta perto do centro.` };
   }
   return {
     label: score > 0 ? dimension.positive : dimension.negative,
@@ -759,12 +657,10 @@ function buildToneChips(vector, dominant) {
   const chips = [];
   const fsmState = state.agentState?.current_fsm_state?.state_name || "neutral";
   chips.push(`FSM ${FSM_LABELS[fsmState] || "Neutral"}`);
-  if (dominant?.label) {
-    chips.push(`${dominant.label} em destaque`);
-  }
-  for (const dimension of topDimensions(vector, 3)) {
-    const descriptor = dimension.value >= 0 ? dimension.positive : dimension.negative;
-    chips.push(`${dimension.label}: ${descriptor}`);
+  if (dominant?.label) chips.push(`${dominant.label} em destaque`);
+  for (const dim of topDimensions(vector, 3)) {
+    const descriptor = dim.value >= 0 ? dim.positive : dim.negative;
+    chips.push(`${dim.label}: ${descriptor}`);
   }
   return chips;
 }
@@ -774,8 +670,8 @@ function buildSparkline(history) {
     return `<div class="empty-state">Ainda nao ha pontos suficientes para desenhar o pulso.</div>`;
   }
 
-  const width = 320;
-  const height = 72;
+  const width = 400;
+  const height = 96;
   const values = history
     .slice(0, 12)
     .reverse()
@@ -802,8 +698,7 @@ function buildSparkline(history) {
       <path d="${d}" fill="none" stroke="url(#sparklineStroke)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
       ${points
         .map(
-          ([x, y]) =>
-            `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" fill="#eef2ff" r="2.6"></circle>`
+          ([x, y]) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" fill="#eef2ff" r="3"></circle>`
         )
         .join("")}
     </svg>
@@ -811,144 +706,26 @@ function buildSparkline(history) {
 }
 
 function buildSmoothPath(points) {
-  if (!points.length) {
-    return "";
-  }
-
+  if (!points.length) return "";
   const closedPoints = [...points, points[0], points[1]];
   let path = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
-
-  for (let index = 1; index < closedPoints.length - 1; index += 1) {
-    const current = closedPoints[index];
-    const next = closedPoints[index + 1];
-    const controlX = ((current.x + next.x) / 2).toFixed(1);
-    const controlY = ((current.y + next.y) / 2).toFixed(1);
-    path += ` Q ${current.x.toFixed(1)} ${current.y.toFixed(1)} ${controlX} ${controlY}`;
+  for (let i = 1; i < closedPoints.length - 1; i += 1) {
+    const current = closedPoints[i];
+    const next = closedPoints[i + 1];
+    const cx = ((current.x + next.x) / 2).toFixed(1);
+    const cy = ((current.y + next.y) / 2).toFixed(1);
+    path += ` Q ${current.x.toFixed(1)} ${current.y.toFixed(1)} ${cx} ${cy}`;
   }
-
   return `${path} Z`;
 }
 
-function setBusy(nextBusy, message) {
-  state.busy = nextBusy;
-  ui.submitButton.disabled = nextBusy;
-  ui.refreshButton.disabled = nextBusy;
-  ui.syncButton.disabled = nextBusy;
-  ui.streamStatus.innerHTML = message;
-}
-
-function normalizeIntensity(value) {
-  return clamp((Number(value || 0) / MAX_INTENSITY) * 100, 0, 100);
-}
-
-function computeIntensity(components) {
-  if (!Array.isArray(components) || !components.length) {
-    return 0;
-  }
-  const sum = components.reduce((accumulator, component) => accumulator + component * component, 0);
-  return Math.sqrt(sum);
-}
-
-function macroForState(stateName) {
-  return MACRO_BY_STATE[stateName] || "neutral";
-}
-
-function slugify(value) {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-function humanizeAgentId(value) {
-  return String(value || "")
-    .replace(/[-_]+/g, " ")
-    .replace(/\b\w/g, (character) => character.toUpperCase());
-}
-
-function formatTimestamp(timestampMs) {
-  if (!timestampMs) {
-    return "--";
-  }
-  try {
-    return new Date(timestampMs).toLocaleString("pt-BR", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      day: "2-digit",
-      month: "2-digit",
-    });
-  } catch (_error) {
-    return "--";
-  }
-}
-
-function findTranscriptByID(id) {
-  return state.transcript.find((entry) => entry.id === id);
-}
-
-function updateTranscript(id, text) {
-  const item = findTranscriptByID(id);
-  if (item) {
-    item.text = text;
-  }
-}
-
-async function fetchJSON(url, options = {}) {
-  const response = await fetch(url, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    },
-    ...options,
-  });
-
-  if (!response.ok) {
-    throw new Error(await extractErrorMessage(response));
-  }
-
-  return response.json();
-}
-
-async function extractErrorMessage(response) {
-  try {
-    const payload = await response.json();
-    return payload.error || payload.message || `${response.status} ${response.statusText}`;
-  } catch (_error) {
-    return `${response.status} ${response.statusText}`;
-  }
-}
-
-function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max);
-}
-
-function escapeHTML(value) {
-  return String(value || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
-}
-
-function sleep(delayMs) {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, delayMs);
-  });
-}
-
 function mapInteractionsToTranscript(interactions) {
-  if (!Array.isArray(interactions)) {
-    return [];
-  }
-
+  if (!Array.isArray(interactions)) return [];
   return interactions.flatMap((interaction, index) => {
     const baseCreatedAt = Number(interaction.created_at_ms || 0);
     const fsmState = interaction.fsm_state?.state_name || "neutral";
     const intensity = normalizeIntensity(interaction.intensity || 0);
     const stimulus = interaction.stimulus || "novelty";
-
     return [
       {
         id: `persisted-user-${index}-${baseCreatedAt}`,
@@ -963,7 +740,7 @@ function mapInteractionsToTranscript(interactions) {
         createdAt: baseCreatedAt + 1,
         meta: [
           `stimulus ${stimulus}`,
-          `fsm ${FSM_LABELS[fsmState] || humanizeAgentId(fsmState)}`,
+          `fsm ${FSM_LABELS[fsmState] || humanize(fsmState)}`,
           `intensidade ${Math.round(intensity)}%`,
         ],
       },
@@ -972,10 +749,7 @@ function mapInteractionsToTranscript(interactions) {
 }
 
 function renderTranscriptMeta(entry) {
-  if (!Array.isArray(entry.meta) || !entry.meta.length) {
-    return "";
-  }
-
+  if (!Array.isArray(entry.meta) || !entry.meta.length) return "";
   return `
     <div class="transcript-meta">
       ${entry.meta
@@ -985,18 +759,84 @@ function renderTranscriptMeta(entry) {
   `;
 }
 
+function setBusy(nextBusy, message) {
+  state.busy = nextBusy;
+  ui.submitBtn.disabled = nextBusy;
+  ui.refreshBtn.disabled = nextBusy;
+  ui.streamStatus.textContent = message;
+}
+
+function normalizeIntensity(value) {
+  return clamp((Number(value || 0) / MAX_INTENSITY) * 100, 0, 100);
+}
+
+function computeIntensity(components) {
+  if (!Array.isArray(components) || !components.length) return 0;
+  return Math.sqrt(components.reduce((sum, c) => sum + c * c, 0));
+}
+
+function macroFor(stateName) {
+  return MACRO_BY_STATE[stateName] || "neutral";
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function slugify(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function humanize(value) {
+  return String(value || "")
+    .replace(/[-_]+/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function formatTimestamp(timestampMs) {
+  if (!timestampMs) return "--";
+  try {
+    return new Date(timestampMs).toLocaleString("pt-BR", {
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      day: "2-digit", month: "2-digit",
+    });
+  } catch {
+    return "--";
+  }
+}
+
+function escapeHTML(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function findTranscript(id) {
+  return state.transcript.find((entry) => entry.id === id);
+}
+
+function updateTranscript(id, text) {
+  const item = findTranscript(id);
+  if (item) item.text = text;
+}
+
 let toastTimer = null;
 function showToast(message, variant = "error") {
   ui.toast.textContent = message;
   ui.toast.classList.remove("hidden");
-  ui.toast.style.borderColor =
-    variant === "success" ? "rgba(99, 225, 165, 0.22)" : "rgba(255, 113, 143, 0.18)";
-  ui.toast.style.background =
-    variant === "success" ? "rgba(10, 35, 23, 0.92)" : "rgba(34, 11, 25, 0.9)";
+  ui.toast.style.borderColor = variant === "success" ? "rgba(99,225,165,0.22)" : "rgba(255,113,143,0.18)";
+  ui.toast.style.background = variant === "success" ? "rgba(10,35,23,0.92)" : "rgba(34,11,25,0.9)";
   ui.toast.style.color = variant === "success" ? "#ceffe5" : "#ffd2dd";
-
-  window.clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => {
-    ui.toast.classList.add("hidden");
-  }, 3200);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => ui.toast.classList.add("hidden"), 3200);
 }

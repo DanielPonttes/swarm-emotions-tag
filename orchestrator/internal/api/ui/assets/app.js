@@ -21,12 +21,6 @@ const MACRO_LABELS = {
   positive: "Macroestado positivo", neutral: "Macroestado neutro", negative: "Macroestado negativo",
 };
 
-const MACRO_BY_STATE = {
-  joyful: "positive", curious: "positive", empathetic: "positive",
-  neutral: "neutral", calm: "neutral",
-  worried: "negative", frustrated: "negative", anxious: "negative",
-};
-
 const SUGGESTIONS = [
   "Estou sobrecarregado com varias entregas e preciso de clareza.",
   "Recebi uma critica dura e nao sei como responder.",
@@ -289,8 +283,8 @@ async function streamInteraction(text, assistantMessageID) {
         agent_id: state.activeAgentId,
         current_emotion: payload.emotion || state.agentState?.current_emotion || { components: [] },
         current_fsm_state: {
-          state_name: payload.fsm_state || state.agentState?.current_fsm_state?.state_name || "neutral",
-          macro_state: macroFor(payload.fsm_state || "neutral"),
+          state_name: payload.fsm_state?.state_name || state.agentState?.current_fsm_state?.state_name || "neutral",
+          macro_state: payload.fsm_state?.macro_state || state.agentState?.current_fsm_state?.macro_state || "neutral",
           entered_at_ms: Date.now(),
         },
         updated_at_ms: Date.now(),
@@ -361,8 +355,8 @@ function handleFallback(payload, assistantMessageID) {
     agent_id: state.activeAgentId,
     current_emotion: payload.emotion_state || { components: [] },
     current_fsm_state: {
-      state_name: payload.fsm_state || "neutral",
-      macro_state: macroFor(payload.fsm_state || "neutral"),
+      state_name: payload.fsm_state?.state_name || "neutral",
+      macro_state: payload.fsm_state?.macro_state || "neutral",
       entered_at_ms: Date.now(),
     },
     updated_at_ms: Date.now(),
@@ -405,7 +399,7 @@ function renderAgentOptions() {
 
 function renderHeaderMetrics() {
   const fsmState = state.agentState?.current_fsm_state?.state_name || "neutral";
-  const macroState = state.agentState?.current_fsm_state?.macro_state || macroFor(fsmState);
+  const macroState = state.agentState?.current_fsm_state?.macro_state || "neutral";
   ui.fsmState.textContent = FSM_LABELS[fsmState] || humanize(fsmState);
   ui.macroState.textContent = MACRO_LABELS[macroState] || `Macroestado ${macroState}`;
   ui.latencyValue.textContent =
@@ -456,7 +450,7 @@ function renderSummary() {
 
 function renderFSMContext() {
   const fsmState = state.agentState?.current_fsm_state?.state_name || "neutral";
-  const macro = macroFor(fsmState);
+  const macro = state.agentState?.current_fsm_state?.macro_state || "neutral";
   const macroClass = macro === "positive" ? "fsm-positive" : macro === "negative" ? "fsm-negative" : "";
 
   ui.fsmContext.innerHTML = `
@@ -775,9 +769,6 @@ function computeIntensity(components) {
   return Math.sqrt(components.reduce((sum, c) => sum + c * c, 0));
 }
 
-function macroFor(stateName) {
-  return MACRO_BY_STATE[stateName] || "neutral";
-}
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);

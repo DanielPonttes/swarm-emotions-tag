@@ -9,7 +9,7 @@ type InteractionRequest struct {
 type InteractionResponse struct {
 	Response     string        `json:"response"`
 	EmotionState EmotionVector `json:"emotion_state"`
-	FsmState     string        `json:"fsm_state"`
+	FsmState     FsmState      `json:"fsm_state"`
 	Intensity    float32       `json:"intensity"`
 	LatencyMs    int64         `json:"latency_ms"`
 	TraceID      string        `json:"trace_id,omitempty"`

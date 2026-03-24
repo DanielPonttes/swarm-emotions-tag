@@ -42,7 +42,7 @@ func (h *Handlers) Interact(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, model.InteractionResponse{
 		Response:     result.LLMResponse,
 		EmotionState: result.NewEmotion,
-		FsmState:     result.NewFsmState.StateName,
+		FsmState:     result.NewFsmState,
 		Intensity:    result.NewIntensity,
 		LatencyMs:    result.LatencyMs,
 		TraceID:      traceID,
@@ -81,7 +81,7 @@ func (h *Handlers) InteractStream(w http.ResponseWriter, r *http.Request) {
 	callbacks := pipeline.StreamCallbacks{
 		OnMetadata: func(meta pipeline.StreamMetadata) error {
 			return writeSSE(w, flusher, "metadata", map[string]any{
-				"fsm_state": meta.NewFsmState.StateName,
+				"fsm_state": meta.NewFsmState,
 				"emotion":   meta.NewEmotion,
 				"intensity": meta.NewIntensity,
 				"trace_id":  traceID,
@@ -128,7 +128,7 @@ func (h *Handlers) respondInteractionJSON(w http.ResponseWriter, r *http.Request
 	respondJSON(w, http.StatusOK, model.InteractionResponse{
 		Response:     result.LLMResponse,
 		EmotionState: result.NewEmotion,
-		FsmState:     result.NewFsmState.StateName,
+		FsmState:     result.NewFsmState,
 		Intensity:    result.NewIntensity,
 		LatencyMs:    result.LatencyMs,
 		TraceID:      traceID,
